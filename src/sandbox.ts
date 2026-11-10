@@ -30,6 +30,8 @@ export interface RunRequest {
   command: string;
   cwd: string;
   timeoutSec: number;
+  /** Characters of output returned (the full log is always on disk) */
+  tailChars: number;
 }
 
 export interface RunResult {
@@ -43,7 +45,8 @@ export interface RunResult {
   selected: { tool: string; version: string }[];
 }
 
-const TAIL_CHARS = 30_000;
+// Default output returned to the agent: ~8 KB (≈2k tokens). The full log is on disk.
+export const DEFAULT_TAIL_KB = 8;
 
 // Under $HOME, never usable as a project dir (or inside one of these).
 const FORBIDDEN_PROJECT_ROOTS = [
@@ -334,8 +337,8 @@ export async function runSandboxed(m: Manifest, req: RunRequest): Promise<RunRes
   const onData = (chunk: Buffer) => {
     log.write(chunk);
     tail += chunk.toString("utf-8");
-    if (tail.length > TAIL_CHARS * 2) {
-      tail = tail.slice(-TAIL_CHARS);
+    if (tail.length > req.tailChars * 2) {
+      tail = tail.slice(-req.tailChars);
       truncated = true;
     }
   };
@@ -364,9 +367,14 @@ export async function runSandboxed(m: Manifest, req: RunRequest): Promise<RunRes
   log.end(`\n# exit: ${exitCode ?? signal}${timedOut ? " (timed out)" : ""} after ${durationMs} ms\n`);
   rmSync(tmp, { recursive: true, force: true });
 
-  if (tail.length > TAIL_CHARS) {
-    tail = tail.slice(-TAIL_CHARS);
+  if (tail.length > req.tailChars) {
+    tail = tail.slice(-req.tailChars);
     truncated = true;
+  }
+  // Start at a whole line when the cut landed mid-line
+  if (truncated) {
+    const nl = tail.indexOf("\n");
+    if (nl >= 0 && nl < tail.length - 1) tail = tail.slice(nl + 1);
   }
   return { exitCode, signal, timedOut, durationMs, tail, truncated, logPath, selected };
 }

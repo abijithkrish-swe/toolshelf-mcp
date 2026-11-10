@@ -22,7 +22,7 @@ import {
 } from "./components.js";
 import { loadBlocklist, matchBlocklist } from "./blocklist.js";
 import { readToolsrc } from "./toolsrc.js";
-import { runSandboxed, validateProject } from "./sandbox.js";
+import { DEFAULT_TAIL_KB, runSandboxed, validateProject } from "./sandbox.js";
 import { REQUESTS_PATH } from "./paths.js";
 
 const execFileAsync = promisify(execFile);
@@ -203,7 +203,8 @@ server.tool(
     "the local proxy; credentials, shell history and ~/Library are unreadable; the environment " +
     "is minimal (no inherited secrets). Installing or upgrading tools is blocked. " +
     "If `tools` is omitted, the project's .toolsrc is used (if any). Returns exit code, " +
-    "the output tail and a full log path.",
+    "the last ~8 KB of output and a full log path (read the log for more). Prefer quiet build " +
+    "flags (mvn -q, gradle -q, npm --silent, cargo -q) and one `run` for a multi-step task.",
   {
     command: z.string().describe("Shell command, run with zsh -c in the project dir"),
     cwd: z.string().describe("Project directory (absolute or ~/...), at least two levels under $HOME"),
@@ -218,8 +219,15 @@ server.tool(
       .max(3600)
       .optional()
       .describe("Kill the command after this many seconds (default 600)"),
+    tail_kb: z
+      .number()
+      .int()
+      .min(1)
+      .max(64)
+      .optional()
+      .describe(`KB of output to return, from the end (default ${DEFAULT_TAIL_KB}). The full log is always saved.`),
   },
-  async ({ command, cwd, tools, timeout_seconds }) => {
+  async ({ command, cwd, tools, timeout_seconds, tail_kb }) => {
     let m: Manifest;
     try {
       m = loadManifest();
@@ -252,6 +260,7 @@ server.tool(
         cwd,
         tools: selection,
         timeoutSec: timeout_seconds ?? 600,
+        tailChars: (tail_kb ?? DEFAULT_TAIL_KB) * 1024,
       });
       const status = r.timedOut
         ? `TIMED OUT after ${timeout_seconds ?? 600}s`
@@ -262,7 +271,9 @@ server.tool(
         `${status} in ${(r.durationMs / 1000).toFixed(1)}s`,
         `tools: ${r.selected.map((s) => `${s.tool} ${s.version}`).join(", ") || "(none)"} [${source}]`,
         `log: ${r.logPath}`,
-        r.truncated ? "(output truncated; full output in the log)" : "",
+        r.truncated
+          ? `(showing the last ${tail_kb ?? DEFAULT_TAIL_KB} KB; read the log for the rest, or pass a larger tail_kb)`
+          : "",
       ].filter(Boolean);
       const result = { content: [{ type: "text" as const, text: `${header.join("\n")}\n\n${r.tail}` }] };
       return r.exitCode === 0 ? result : { ...result, isError: true };
