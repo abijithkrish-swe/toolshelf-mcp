@@ -11,7 +11,8 @@
 #   --components DIR   components root         (default: $COMPONENTS or ~/Components)
 #   --manifest FILE    approved-list manifest  (default: $COMPONENTS_MANIFEST or
 #                                               ~/.config/components/components.conf)
-#   --register         also (re)register in Claude Code (user scope)
+#   --register         also (re)register in Claude Code (user scope) — default
+#                      config and ~/.config/claude-personal if it exists
 #   -h, --help         show this help
 #
 # Env fallbacks: TOOLSHELF_HOME (= --prefix), COMPONENTS, COMPONENTS_MANIFEST.
@@ -21,7 +22,7 @@
 set -eu
 
 die() { echo "install.sh: $*" >&2; exit 1; }
-usage() { sed -n '9,19p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '9,20p' "$0" | sed 's/^# \{0,1\}//'; }
 
 # Absolute path; expands a leading ~ (not expanded in --opt=~/x by the shell).
 abspath() {
@@ -135,10 +136,22 @@ echo "==> Installed $REV to $TARGET"
 # --- Register ---------------------------------------------------------------
 if $REGISTER; then
   command -v claude >/dev/null 2>&1 || die "claude CLI not found; register manually (see README)"
-  claude mcp remove toolshelf -s user >/dev/null 2>&1 || true
-  claude mcp add toolshelf -s user \
-    -e "COMPONENTS=$COMPONENTS" -e "COMPONENTS_MANIFEST=$MANIFEST" \
-    -- "$NODE_BIN/node" "$TARGET/dist/index.js"
+  # Every Claude Code config on this machine: the default (~/.claude, MCP list in
+  # ~/.claude.json) and the personal one used by `myclaude`
+  # (CLAUDE_CONFIG_DIR=~/.config/claude-personal).
+  register() {
+    claude mcp remove toolshelf -s user >/dev/null 2>&1 || true
+    claude mcp add toolshelf -s user \
+      -e "COMPONENTS=$COMPONENTS" -e "COMPONENTS_MANIFEST=$MANIFEST" \
+      -- "$NODE_BIN/node" "$TARGET/dist/index.js"
+  }
+  echo "==> Registering in Claude Code (default config)"
+  (unset CLAUDE_CONFIG_DIR; register)
+  PERSONAL=${XDG_CONFIG_HOME:-$HOME/.config}/claude-personal
+  if [ -d "$PERSONAL" ]; then
+    echo "==> Registering in Claude Code ($PERSONAL)"
+    (CLAUDE_CONFIG_DIR=$PERSONAL; export CLAUDE_CONFIG_DIR; register)
+  fi
 else
   echo "Register (once, or after changing the default node or paths):"
   echo "  claude mcp add toolshelf -s user -e 'COMPONENTS=$COMPONENTS' -e 'COMPONENTS_MANIFEST=$MANIFEST' -- '$NODE_BIN/node' '$TARGET/dist/index.js'"
