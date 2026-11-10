@@ -19,6 +19,9 @@ Full design & runbooks: `~/Projects/Personal/zshrc/configured/Docs/AgentComponen
 | `get_component_versions` | Approved versions for one component |
 | `get_defaults` | `default` / `autoload` versions from the manifest |
 | `get_component_env` | Shell exports (`JAVA_HOME`, `PATH`, …) for `{tool: version}`; agents prefix commands with them |
+| `resolve_toolsrc` | A project's `.toolsrc` → exports + the `tools` map for `run` |
+| `run` | Run a command in the macOS sandbox with approved versions: project-only writes, sandbox-only caches, localhost/proxy-only network, secrets unreadable, minimal env, blocklist, timeout, log file |
+| `request_component` | Record a request for an unapproved version (`components_requests` in zsh). Never installs |
 | `colima_status` | Colima / Docker / k8s status |
 | `colima_start` / `colima_stop` / `colima_restart` / `colima_delete` / `docker_context_use_colima` | Return the command for the user to run (never executed) |
 
@@ -78,6 +81,10 @@ a test manifest.
 |-----|---------|
 | `COMPONENTS_MANIFEST` | `~/.config/components/components.conf` |
 | `COMPONENTS` | `~/Components` |
+| `TOOLSHELF_BLOCKLIST` | `$XDG_CONFIG_HOME/agents/blocklist.txt` (missing → every run refused) |
+| `TOOLSHELF_CACHE` | `$XDG_CACHE_HOME/toolshelf` (sandbox-only caches) |
+| `TOOLSHELF_STATE` | `$XDG_STATE_HOME/toolshelf` (run logs, profiles, requests) |
+| `TOOLSHELF_PROXY` | `$https_proxy`, else `http://127.0.0.1:3128` (must be localhost) |
 | `TOOLSHELF_HOME` (install.sh only, same as `--prefix`) | `<components>/toolshelf-mcp` |
 
 ## Other agents

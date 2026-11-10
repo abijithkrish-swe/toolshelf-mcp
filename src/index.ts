@@ -6,6 +6,9 @@ import { z } from "zod";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+
 import {
   loadManifest,
   findTool,
@@ -13,9 +16,14 @@ import {
   locate,
   unlistedOnDisk,
   envFor,
+  resolveVersion,
   type Manifest,
   type VersionEntry,
 } from "./components.js";
+import { loadBlocklist, matchBlocklist } from "./blocklist.js";
+import { readToolsrc } from "./toolsrc.js";
+import { runSandboxed, validateProject } from "./sandbox.js";
+import { REQUESTS_PATH } from "./paths.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -147,6 +155,156 @@ server.tool(
       if (env.path.length) exports.push(`export PATH=${shq(env.path.join(":"))}:"$PATH"`);
       const picked = env.selected.map((s) => `${s.tool} ${s.version}`).join(", ");
       return text(`# ${picked}\n${exports.join("\n")}`);
+    }),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: resolve_toolsrc
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "resolve_toolsrc",
+  "Read a project's .toolsrc (the versions it pins) and return the matching shell exports " +
+    "plus the `tools` map to pass to `run`. Prefer this over guessing versions.",
+  { dir: z.string().describe("Project directory containing .toolsrc") },
+  async ({ dir }) =>
+    withManifest((m) => {
+      const project = validateProject(dir);
+      const rc = readToolsrc(project);
+      if (!rc) return text(`No .toolsrc in ${project}. Use get_defaults / get_component_env instead.`);
+      const env = envFor(m, rc.tools);
+      const exports = env.vars.map(([k, v]) => `export ${k}=${shq(v)}`);
+      if (env.path.length) exports.push(`export PATH=${shq(env.path.join(":"))}:"$PATH"`);
+      const notes = [
+        rc.shellOnly.length && `# not applied (shell-only, run toolup yourself): ${rc.shellOnly.join(", ")}`,
+        rc.unknown.length && `# unknown keys ignored: ${rc.unknown.join(", ")}`,
+      ].filter(Boolean);
+      const tools = Object.fromEntries(env.selected.map((s) => [s.tool, s.version]));
+      return text(
+        [
+          `# ${rc.path}: ${env.selected.map((s) => `${s.tool} ${s.version}`).join(", ") || "(no tools)"}`,
+          ...notes,
+          ...exports,
+          "",
+          `tools for run: ${JSON.stringify(tools)}`,
+        ].join("\n"),
+      );
+    }),
+);
+
+// ---------------------------------------------------------------------------
+// Tool: run
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "run",
+  "Run a shell command in a macOS sandbox with approved component versions. " +
+    "Writes are limited to the project dir and sandbox-only caches; network goes only through " +
+    "the local proxy; credentials, shell history and ~/Library are unreadable; the environment " +
+    "is minimal (no inherited secrets). Installing or upgrading tools is blocked. " +
+    "If `tools` is omitted, the project's .toolsrc is used (if any). Returns exit code, " +
+    "the output tail and a full log path.",
+  {
+    command: z.string().describe("Shell command, run with zsh -c in the project dir"),
+    cwd: z.string().describe("Project directory (absolute or ~/...), at least two levels under $HOME"),
+    tools: z
+      .record(z.string(), z.string())
+      .optional()
+      .describe('Components to activate, e.g. {"jdk": "17", "maven": ""}. Omit to use .toolsrc.'),
+    timeout_seconds: z
+      .number()
+      .int()
+      .min(1)
+      .max(3600)
+      .optional()
+      .describe("Kill the command after this many seconds (default 600)"),
+  },
+  async ({ command, cwd, tools, timeout_seconds }) => {
+    let m: Manifest;
+    try {
+      m = loadManifest();
+      const rule = matchBlocklist(loadBlocklist(), command);
+      if (rule) {
+        return fail(
+          `Blocked: ${rule.reason}.\nThis command was not run. If the user wants it, they run it ` +
+            `themselves; for a missing tool version use request_component.`,
+        );
+      }
+    } catch (err: unknown) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+
+    let selection = tools;
+    let source = "tools argument";
+    if (!selection) {
+      try {
+        const rc = readToolsrc(validateProject(cwd));
+        selection = rc?.tools ?? {};
+        source = rc ? rc.path : "no .toolsrc (system tools only)";
+      } catch (err: unknown) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    try {
+      const r = await runSandboxed(m, {
+        command,
+        cwd,
+        tools: selection,
+        timeoutSec: timeout_seconds ?? 600,
+      });
+      const status = r.timedOut
+        ? `TIMED OUT after ${timeout_seconds ?? 600}s`
+        : r.exitCode !== null
+          ? `exit ${r.exitCode}`
+          : `killed by ${r.signal}`;
+      const header = [
+        `${status} in ${(r.durationMs / 1000).toFixed(1)}s`,
+        `tools: ${r.selected.map((s) => `${s.tool} ${s.version}`).join(", ") || "(none)"} [${source}]`,
+        `log: ${r.logPath}`,
+        r.truncated ? "(output truncated; full output in the log)" : "",
+      ].filter(Boolean);
+      const result = { content: [{ type: "text" as const, text: `${header.join("\n")}\n\n${r.tail}` }] };
+      return r.exitCode === 0 ? result : { ...result, isError: true };
+    } catch (err: unknown) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: request_component
+// ---------------------------------------------------------------------------
+
+server.tool(
+  "request_component",
+  "Ask the user to approve/install a component version that isn't in the manifest. " +
+    "This only records the request (the user reviews it with `components_requests`); it never " +
+    "installs anything. Tell the user you made the request.",
+  {
+    tool: z.string().describe("Component name, e.g. jdk, node, python (may be a new tool type)"),
+    version: z.string().describe("Version needed, e.g. 21 or 3.12.4"),
+    reason: z.string().describe("Why it is needed (project, error message, requirement)"),
+    project: z.string().optional().describe("Project directory it is for"),
+  },
+  async ({ tool, version, reason, project }) =>
+    withManifest((m) => {
+      const def = findTool(m, tool);
+      if (def) {
+        try {
+          const v = resolveVersion(m, def, version);
+          return text(`${def.name} ${v.version} is already approved; use it via get_component_env or run.`);
+        } catch {
+          /* not approved — record the request */
+        }
+      }
+      mkdirSync(dirname(REQUESTS_PATH), { recursive: true });
+      const entry = { ts: new Date().toISOString(), tool, version, reason, project: project ?? null };
+      appendFileSync(REQUESTS_PATH, JSON.stringify(entry) + "\n");
+      return text(
+        `Recorded request: ${tool} ${version}. It is NOT installed. Tell the user; they review ` +
+          `requests with \`components_requests\` and decide.`,
+      );
     }),
 );
 
