@@ -11,11 +11,12 @@ An MCP server (`toolshelf`, package `toolshelf-mcp`) that exposes the user's app
 ```bash
 npm install
 npm run build    # tsc → dist/
-./install.sh     # build a copy into ~/Components/toolshelf-mcp (source untouched); --register to add to Claude Code
+npm test         # tsc + node --test test/*.test.mjs
+./install.sh     # build + test a copy into ~/Components/toolshelf-mcp (source untouched); --register to add to Claude Code
 npm run dev      # tsc --watch
 ```
 
-No test suite yet. Manual test: pipe JSON-RPC (`initialize`, `notifications/initialized`, `tools/call`) into `node dist/index.js`, with `COMPONENTS_MANIFEST` pointing at a test manifest.
+Tests: `test/*.test.mjs` (Node's built-in runner, against `dist/`); see the README table. Each file sets up a fake `$HOME` via `test/helpers.mjs` **before** importing from `dist/` (paths are read at module load). Add a test with every behaviour change. Real-sandbox tests skip inside toolshelf's own sandbox (`TOOLSHELF_SANDBOX` set); run the full suite from a terminal. `install.sh` runs the suite and refuses to install on a failure.
 
 ## Architecture
 

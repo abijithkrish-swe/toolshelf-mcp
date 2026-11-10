@@ -34,9 +34,9 @@ Version matching: exact, or a unique prefix on a segment boundary
 ## Install
 
 Like the dotfiles, the source repo is never run directly. `install.sh` copies it
-to a staging dir, builds there with the manifest's **default Node**, runs a
-smoke test, then swaps it into the install dir. A failed build leaves the live
-install untouched.
+to a staging dir, builds there with the manifest's **default Node**, runs the
+test suite and a smoke test, then swaps it into the install dir. A failed build
+or test leaves the live install untouched (`--skip-tests` to bypass).
 
 ```bash
 ./install.sh                                  # install / update to ~/Components/toolshelf-mcp
@@ -52,6 +52,7 @@ install untouched.
 | `--components DIR` | env `COMPONENTS`, else `~/Components` |
 | `--manifest FILE` | env `COMPONENTS_MANIFEST`, else `~/.config/components/components.conf` |
 | `--register` | off |
+| `--skip-tests` | off: tests run before every install |
 
 Safety:
 - The installer refuses an install dir inside the source tree, `/`, `$HOME`, or
@@ -70,11 +71,25 @@ in the manifest, because the registration points at that node's absolute path.
 npm install
 npm run build    # tsc → dist/ (gitignored)
 npm run dev      # tsc --watch
+npm test         # tsc + node --test test/*.test.mjs (~3 s, no extra dependencies)
 ```
 
-Manual test: pipe JSON-RPC (`initialize`, `notifications/initialized`,
-`tools/call`) into `node dist/index.js`, with `COMPONENTS_MANIFEST` pointing at
-a test manifest.
+Tests use Node's built-in runner and run against `dist/`. Each file builds a
+throwaway `$HOME` (`test/helpers.mjs`) with its own manifest, fake components,
+blocklist and state, so your real ones are never read or written.
+
+| File | Covers |
+|------|--------|
+| `manifest.test.mjs` | parsing, every rejection rule, digest pinning |
+| `versions.test.mjs` | default/exact/prefix matching (`2` ≠ `25`), ambiguity, disk health, `envFor` |
+| `blocklist.test.mjs` | fail-closed loading, matching, `blocked.jsonl` records |
+| `project.test.mjs` | what counts as a project (markers, private dirs, symlinks), `.toolsrc`, proxy |
+| `sandbox.test.mjs` | real `sandbox-exec` runs: writes, secrets, env, network, `$TMPDIR`, timeout, tail, logs |
+| `server.test.mjs` | the MCP server over stdio: tools, blocked `run`, `request_component`, the sandbox note |
+
+The real-sandbox tests skip themselves when they run inside toolshelf's own
+sandbox (an agent's `run`), since `sandbox-exec` can't nest; run `npm test`
+from a terminal for the full suite.
 
 ## Environment
 

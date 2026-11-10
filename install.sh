@@ -3,8 +3,9 @@
 # install.sh — build and install toolshelf-mcp from this source tree
 #
 # The source tree is never modified: files are copied to a staging dir next to
-# the target, built there with the manifest's default Node, smoke-tested, and
-# only then swapped into place. A failed build leaves the live install alone.
+# the target, built there with the manifest's default Node, tested (test/),
+# smoke-tested, and only then swapped into place. A failed build or test leaves
+# the live install alone.
 #
 # Usage: ./install.sh [options]
 #   --prefix DIR       install dir             (default: <components>/toolshelf-mcp)
@@ -13,6 +14,8 @@
 #                                               ~/.config/components/components.conf)
 #   --register         also (re)register in Claude Code (user scope) — default
 #                      config and ~/.config/claude-personal if it exists
+#   --skip-tests       don't run the test suite before installing (it runs in a
+#                      fake $HOME and takes a few seconds; a failure aborts)
 #   -h, --help         show this help
 #
 # Env fallbacks: TOOLSHELF_HOME (= --prefix), COMPONENTS, COMPONENTS_MANIFEST.
@@ -22,7 +25,7 @@
 set -eu
 
 die() { echo "install.sh: $*" >&2; exit 1; }
-usage() { sed -n '9,20p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '/^# Usage:/,/^# Env fallbacks:/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
 
 # Absolute path; expands a leading ~ (not expanded in --opt=~/x by the shell).
 abspath() {
@@ -43,6 +46,7 @@ TARGET=${TOOLSHELF_HOME:-}
 COMPONENTS=${COMPONENTS:-$HOME/Components}
 MANIFEST=${COMPONENTS_MANIFEST:-$HOME/.config/components/components.conf}
 REGISTER=false
+RUN_TESTS=true
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -53,6 +57,7 @@ while [ $# -gt 0 ]; do
     --manifest)     [ $# -ge 2 ] || die "--manifest needs a file"; MANIFEST=$2; shift ;;
     --manifest=*)   MANIFEST=${1#*=} ;;
     --register)     REGISTER=true ;;
+    --skip-tests)   RUN_TESTS=false ;;
     -h|--help)      usage; exit 0 ;;
     *)              usage >&2; exit 2 ;;
   esac
@@ -95,7 +100,7 @@ STAGE=$(mktemp -d "$(dirname "$TARGET")/.toolshelf-mcp.stage.XXXXXX")
 trap 'rm -rf "$STAGE"' EXIT
 
 echo "==> Copying source to staging"
-for f in package.json package-lock.json tsconfig.json README.md src config; do
+for f in package.json package-lock.json tsconfig.json README.md src config test; do
   cp -R "$SRC/$f" "$STAGE/"
 done
 
@@ -104,6 +109,16 @@ echo "==> Building"
   cd "$STAGE"
   npm ci --prefer-offline --no-audit --no-fund --loglevel=error
   npm run --silent build
+)
+
+if $RUN_TESTS; then
+  echo "==> Tests (fake \$HOME; your manifest, logs and caches are not touched)"
+  (cd "$STAGE" && node --test --test-reporter=dot test/*.test.mjs) \
+    || die "tests failed; nothing was installed (details: cd $SRC && npm test)"
+fi
+(
+  cd "$STAGE"
+  rm -rf test
   npm prune --omit=dev --no-audit --no-fund --loglevel=error
 )
 

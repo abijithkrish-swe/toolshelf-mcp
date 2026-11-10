@@ -381,6 +381,13 @@ export async function execLogged(file: string, args: string[], o: ExecOptions): 
     timedOut = true;
     o.onTimeout?.();
     killGroup("SIGTERM");
+    // The shell may handle TERM late and start the script's next command
+    // first; kill it outright so nothing more runs. Children got TERM above.
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      /* already gone */
+    }
     setTimeout(() => killGroup("SIGKILL"), 5_000).unref();
   }, o.timeoutSec * 1000);
 
@@ -390,7 +397,10 @@ export async function execLogged(file: string, args: string[], o: ExecOptions): 
   }).finally(() => clearTimeout(timer));
 
   const durationMs = Date.now() - started;
-  log.end(`\n# exit: ${exitCode ?? signal}${timedOut ? " (timed out)" : ""} after ${durationMs} ms\n`);
+  // Wait for the flush: callers read the log right away (sandboxDenied).
+  await new Promise<void>((resolve) =>
+    log.end(`\n# exit: ${exitCode ?? signal}${timedOut ? " (timed out)" : ""} after ${durationMs} ms\n`, () => resolve()),
+  );
 
   if (tail.length > o.tailChars) {
     tail = tail.slice(-o.tailChars);
