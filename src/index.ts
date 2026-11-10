@@ -22,7 +22,7 @@ import {
 } from "./components.js";
 import { loadBlocklist, matchBlocklist, recordBlocked } from "./blocklist.js";
 import { readToolsrc } from "./toolsrc.js";
-import { DEFAULT_TAIL_KB, runSandboxed, validateProject } from "./sandbox.js";
+import { DEFAULT_TAIL_KB, runSandboxed, sandboxDenied, validateProject } from "./sandbox.js";
 import { runDocker } from "./docker.js";
 import { REQUESTS_PATH } from "./paths.js";
 
@@ -205,9 +205,16 @@ server.tool(
     "is minimal (no inherited secrets). Installing or upgrading tools is blocked. " +
     "If `tools` is omitted, the project's .toolsrc is used (if any). Returns exit code, " +
     "the last ~8 KB of output and a full log path (read the log for more). Prefer quiet build " +
-    "flags (mvn -q, gradle -q, npm --silent, cargo -q) and one `run` for a multi-step task.",
+    "flags (mvn -q, gradle -q, npm --silent, cargo -q) and one `run` for a multi-step task. " +
+    "Use `run` for builds, tests and scripts, not to edit files (use your edit tools), and don't " +
+    "pipe output through tail/head (use tail_kb).",
   {
-    command: z.string().describe("Shell command, run with zsh -c in the project dir"),
+    command: z
+      .string()
+      .describe(
+        "Shell command, run with zsh -c in the project dir. Temp files go in $TMPDIR (private to this " +
+          "run, deleted after); /tmp is not writable in the sandbox.",
+      ),
     cwd: z.string().describe("Project directory (absolute or ~/...), at least two levels under $HOME"),
     tools: z
       .record(z.string(), z.string())
@@ -298,6 +305,10 @@ server.tool(
         `log: ${r.logPath}`,
         r.truncated
           ? `(showing the last ${tail_kb ?? DEFAULT_TAIL_KB} KB; read the log for the rest, or pass a larger tail_kb)`
+          : "",
+        mode !== "docker" && sandboxDenied(r.logPath)
+          ? "note: the sandbox blocked a file operation (\"operation not permitted\" in the log), even if " +
+            "the exit code looks fine. Writes are allowed only in the project and $TMPDIR (not /tmp, not ~)."
           : "",
       ].filter(Boolean);
       const result = { content: [{ type: "text" as const, text: `${header.join("\n")}\n\n${r.tail}` }] };

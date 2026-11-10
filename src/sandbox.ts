@@ -293,6 +293,19 @@ ${secrets.map((p) => `  (subpath ${sbq(p)})`).join("\n")})
 `;
 }
 
+/**
+ * Did the sandbox refuse something during this run? Checked on the whole log,
+ * because commands often hide the error (2>/dev/null, || true) and exit 0.
+ */
+export function sandboxDenied(logPath: string): boolean {
+  try {
+    if (statSync(logPath).size > 32 * 1024 * 1024) return false;
+    return /operation not permitted/i.test(readFileSync(logPath, "utf-8"));
+  } catch {
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Run
 // ---------------------------------------------------------------------------

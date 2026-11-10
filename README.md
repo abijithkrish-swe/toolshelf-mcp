@@ -20,7 +20,7 @@ Full design & runbooks: `~/Projects/Personal/zshrc/configured/Docs/AgentComponen
 | `get_defaults` | `default` / `autoload` versions from the manifest |
 | `get_component_env` | Shell exports (`JAVA_HOME`, `PATH`, …) for `{tool: version}`; agents prefix commands with them |
 | `resolve_toolsrc` | A project's `.toolsrc` → exports + the `tools` map for `run` |
-| `run` | Run a command in the macOS sandbox with approved versions: project-only writes (cwd must be a project: .git, package.json, pom.xml, … or an empty .toolshelf), sandbox-only caches, localhost/proxy-only network, secrets unreadable, minimal env, blocklist, timeout, log file |
+| `run` | Run a command in the macOS sandbox with approved versions: project-only writes (cwd must be a project: .git, package.json, pom.xml, … or an empty .toolshelf), sandbox-only caches, localhost/proxy-only network, secrets unreadable, minimal env, blocklist, timeout, log file. Temp files go in `$TMPDIR` (private per run; `/tmp` isn't writable), and the reply carries a note whenever the sandbox refused something, even on exit 0 |
 | `run` (`mode: "docker"`) | Untrusted code: a throwaway container from the one requested tool's pinned image (manifest `docker=`), project at `/work`, nothing else from the host, no caches between runs. `network: "none"` (default) or `"proxy"`: an internal per-run network whose only exit is a pinned forwarder to the zero-trust proxy. Needs Colima running |
 | `request_component` | Record a request for an unapproved version (`components_requests` in zsh). Never installs |
 | `colima_status` | Colima / Docker / k8s status |
