@@ -113,13 +113,13 @@ export function validateProject(cwd: string): string {
 // Proxy
 // ---------------------------------------------------------------------------
 
-interface Proxy {
+export interface Proxy {
   url: string;
   host: string;
   port: string;
 }
 
-function proxyFromEnv(): Proxy {
+export function proxyFromEnv(): Proxy {
   const raw =
     process.env.TOOLSHELF_PROXY || process.env.https_proxy || process.env.HTTPS_PROXY ||
     "http://127.0.0.1:3128";
@@ -293,7 +293,7 @@ ${secrets.map((p) => `  (subpath ${sbq(p)})`).join("\n")})
 // Run
 // ---------------------------------------------------------------------------
 
-function runId(): string {
+export function runId(): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(
@@ -301,35 +301,43 @@ function runId(): string {
   )}${pad(d.getSeconds())}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-export async function runSandboxed(m: Manifest, req: RunRequest): Promise<RunResult> {
-  const project = validateProject(req.cwd);
-  const proxy = proxyFromEnv();
-  const caches = prepareCaches(m, proxy);
-  const tmp = mkdtempSync(join(caches.tmp, "run-"));
-  const { env, selected } = buildEnv(m, req.tools, proxy, caches, tmp);
+/** runs/ dir for logs and generated profiles. */
+export function runsDir(): string {
+  const dir = join(STATE_ROOT, "runs");
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
 
-  const runsDir = join(STATE_ROOT, "runs");
-  mkdirSync(runsDir, { recursive: true });
-  const id = runId();
-  const profilePath = join(runsDir, `${id}.sb`);
-  const logPath = join(runsDir, `${id}.log`);
-  writeFileSync(profilePath, buildProfile(project));
+export interface ExecOptions {
+  cwd: string;
+  env: Record<string, string>;
+  timeoutSec: number;
+  tailChars: number;
+  logPath: string;
+  /** Lines written at the top of the log */
+  header: string;
+  /** Extra cleanup on timeout (e.g. `docker kill`), besides signalling the process group */
+  onTimeout?: () => void;
+}
 
-  const log = createWriteStream(logPath);
-  log.write(
-    `# toolshelf run ${id}\n# cwd: ${project}\n# tools: ${
-      selected.map((s) => `${s.tool} ${s.version}`).join(", ") || "(none)"
-    }\n# command: ${req.command}\n\n`,
-  );
+export type ExecResult = Omit<RunResult, "logPath" | "selected">;
+
+/**
+ * Spawn a command in its own process group, stream its output to a log file,
+ * keep the last `tailChars` of it, and kill the group on timeout.
+ */
+export async function execLogged(file: string, args: string[], o: ExecOptions): Promise<ExecResult> {
+  const log = createWriteStream(o.logPath);
+  log.write(o.header + "\n");
 
   const started = Date.now();
   let tail = "";
   let truncated = false;
   let timedOut = false;
 
-  const child = spawn("/usr/bin/sandbox-exec", ["-f", profilePath, "/bin/zsh", "-f", "-c", req.command], {
-    cwd: project,
-    env,
+  const child = spawn(file, args, {
+    cwd: o.cwd,
+    env: o.env,
     detached: true, // own process group, so a timeout kills the whole tree
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -337,8 +345,8 @@ export async function runSandboxed(m: Manifest, req: RunRequest): Promise<RunRes
   const onData = (chunk: Buffer) => {
     log.write(chunk);
     tail += chunk.toString("utf-8");
-    if (tail.length > req.tailChars * 2) {
-      tail = tail.slice(-req.tailChars);
+    if (tail.length > o.tailChars * 2) {
+      tail = tail.slice(-o.tailChars);
       truncated = true;
     }
   };
@@ -354,9 +362,10 @@ export async function runSandboxed(m: Manifest, req: RunRequest): Promise<RunRes
   };
   const timer = setTimeout(() => {
     timedOut = true;
+    o.onTimeout?.();
     killGroup("SIGTERM");
     setTimeout(() => killGroup("SIGKILL"), 5_000).unref();
-  }, req.timeoutSec * 1000);
+  }, o.timeoutSec * 1000);
 
   const [exitCode, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((resolve, reject) => {
     child.on("error", reject);
@@ -365,10 +374,9 @@ export async function runSandboxed(m: Manifest, req: RunRequest): Promise<RunRes
 
   const durationMs = Date.now() - started;
   log.end(`\n# exit: ${exitCode ?? signal}${timedOut ? " (timed out)" : ""} after ${durationMs} ms\n`);
-  rmSync(tmp, { recursive: true, force: true });
 
-  if (tail.length > req.tailChars) {
-    tail = tail.slice(-req.tailChars);
+  if (tail.length > o.tailChars) {
+    tail = tail.slice(-o.tailChars);
     truncated = true;
   }
   // Start at a whole line when the cut landed mid-line
@@ -376,5 +384,34 @@ export async function runSandboxed(m: Manifest, req: RunRequest): Promise<RunRes
     const nl = tail.indexOf("\n");
     if (nl >= 0 && nl < tail.length - 1) tail = tail.slice(nl + 1);
   }
-  return { exitCode, signal, timedOut, durationMs, tail, truncated, logPath, selected };
+  return { exitCode, signal, timedOut, durationMs, tail, truncated };
+}
+
+export async function runSandboxed(m: Manifest, req: RunRequest): Promise<RunResult> {
+  const project = validateProject(req.cwd);
+  const proxy = proxyFromEnv();
+  const caches = prepareCaches(m, proxy);
+  const tmp = mkdtempSync(join(caches.tmp, "run-"));
+  const { env, selected } = buildEnv(m, req.tools, proxy, caches, tmp);
+
+  const id = runId();
+  const profilePath = join(runsDir(), `${id}.sb`);
+  const logPath = join(runsDir(), `${id}.log`);
+  writeFileSync(profilePath, buildProfile(project));
+
+  try {
+    const r = await execLogged("/usr/bin/sandbox-exec", ["-f", profilePath, "/bin/zsh", "-f", "-c", req.command], {
+      cwd: project,
+      env,
+      timeoutSec: req.timeoutSec,
+      tailChars: req.tailChars,
+      logPath,
+      header: `# toolshelf run ${id} (sandbox)\n# cwd: ${project}\n# tools: ${
+        selected.map((s) => `${s.tool} ${s.version}`).join(", ") || "(none)"
+      }\n# command: ${req.command}\n`,
+    });
+    return { ...r, logPath, selected };
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
 }

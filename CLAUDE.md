@@ -21,6 +21,7 @@ No test suite yet. Manual test: pipe JSON-RPC (`initialize`, `notifications/init
 
 - **`components.ts`** — manifest parser (`loadManifest`, errors with line numbers), lookup (`findTool` by name or dir), version matching (`resolveVersion`: exact or unique segment-boundary prefix; empty → default), disk health (`locate`, `unlistedOnDisk`), and env computation (`envFor`).
 - **`index.ts`** — MCP tools: `list_components`, `get_component_versions`, `get_defaults`, `get_component_env`, `resolve_toolsrc`, `run`, `request_component`, plus colima tools that only return commands.
+- **`docker.ts`** — `run` docker mode: one pinned image per run (manifest `docker=`), per-run internal network + `@image proxy-forwarder` for `network: "proxy"`, container limits, cleanup.
 - **`sandbox.ts`** — `run`: project-dir validation, sandbox-only caches (generated Maven settings.xml / Gradle gradle.properties with proxy), minimal env, generated `sandbox-exec` profile (writes: project + caches; reads: no secrets/~/Library; network: localhost only), process-group timeout, log files.
 - **`blocklist.ts`** — loads `<regex> ## <reason>` rules (fail closed). **`toolsrc.ts`** — `.toolsrc` parsing. **`paths.ts`** — XDG locations.
 

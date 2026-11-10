@@ -23,6 +23,7 @@ import {
 import { loadBlocklist, matchBlocklist } from "./blocklist.js";
 import { readToolsrc } from "./toolsrc.js";
 import { DEFAULT_TAIL_KB, runSandboxed, validateProject } from "./sandbox.js";
+import { runDocker } from "./docker.js";
 import { REQUESTS_PATH } from "./paths.js";
 
 const execFileAsync = promisify(execFile);
@@ -226,12 +227,30 @@ server.tool(
       .max(64)
       .optional()
       .describe(`KB of output to return, from the end (default ${DEFAULT_TAIL_KB}). The full log is always saved.`),
+    mode: z
+      .enum(["sandbox", "docker"])
+      .optional()
+      .describe(
+        'sandbox (default): macOS sandbox with the approved host tools. docker: for untrusted code — ' +
+          "a throwaway container from the one requested tool's pinned image, project mounted at /work, " +
+          "nothing else from the host. Needs Colima running.",
+      ),
+    network: z
+      .enum(["none", "proxy"])
+      .optional()
+      .describe(
+        'docker mode only. none (default): no network. proxy: only the zero-trust proxy is reachable ' +
+          "(enforced), e.g. to download dependencies.",
+      ),
   },
-  async ({ command, cwd, tools, timeout_seconds, tail_kb }) => {
+  async ({ command, cwd, tools, timeout_seconds, tail_kb, mode, network }) => {
     let m: Manifest;
     try {
       m = loadManifest();
-      const rule = matchBlocklist(loadBlocklist(), command);
+      if (network && mode !== "docker") return fail('network applies only to mode "docker"');
+      // Docker runs are isolated from the host's tools, so the blocklist
+      // (which protects them) applies to sandbox mode only.
+      const rule = mode === "docker" ? undefined : matchBlocklist(loadBlocklist(), command);
       if (rule) {
         return fail(
           `Blocked: ${rule.reason}.\nThis command was not run. If the user wants it, they run it ` +
@@ -255,13 +274,18 @@ server.tool(
     }
 
     try {
-      const r = await runSandboxed(m, {
+      const base = {
         command,
         cwd,
         tools: selection,
         timeoutSec: timeout_seconds ?? 600,
         tailChars: (tail_kb ?? DEFAULT_TAIL_KB) * 1024,
-      });
+      };
+      const r =
+        mode === "docker"
+          ? await runDocker(m, { ...base, network: network ?? "none" })
+          : await runSandboxed(m, base);
+      if (mode === "docker") source += `; docker, network ${network ?? "none"}`;
       const status = r.timedOut
         ? `TIMED OUT after ${timeout_seconds ?? 600}s`
         : r.exitCode !== null

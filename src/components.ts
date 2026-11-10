@@ -39,6 +39,8 @@ export interface Manifest {
   path: string;
   tools: ToolDef[];
   versions: VersionEntry[];
+  /** Helper images from `@image <name> <image@sha256:…>` lines (e.g. the docker-mode proxy forwarder) */
+  images: Record<string, string>;
 }
 
 export class ManifestError extends Error {}
@@ -54,6 +56,9 @@ export function manifestPath(): string {
 
 const TOOL_KEYS = new Set(["dir", "root", "bin", "check", "home"]);
 
+/** A Docker image reference pinned by digest — the only kind docker mode will run. */
+export const PINNED_IMAGE = /@sha256:[0-9a-f]{64}$/;
+
 /** Parse components.conf. Throws ManifestError (with line numbers) on any problem. */
 export function loadManifest(): Manifest {
   const path = manifestPath();
@@ -66,6 +71,7 @@ export function loadManifest(): Manifest {
 
   const tools: ToolDef[] = [];
   const versions: VersionEntry[] = [];
+  const images: Record<string, string> = {};
   const errors: string[] = [];
 
   readFileSync(path, "utf-8")
@@ -101,6 +107,16 @@ export function loadManifest(): Manifest {
         return;
       }
 
+      if (head === "@image") {
+        const [name, ref] = rest;
+        if (!name || !ref) return errors.push(`${where}: @image needs a name and an image`);
+        if (!PINNED_IMAGE.test(ref)) {
+          return errors.push(`${where}: @image ${name} must be pinned by digest (image@sha256:<64 hex>)`);
+        }
+        images[name] = ref;
+        return;
+      }
+
       if (head.startsWith("@")) return errors.push(`${where}: unknown directive ${head}`);
 
       // Version line: <tool> <version> [flags]
@@ -118,7 +134,7 @@ export function loadManifest(): Manifest {
         else if (f === "onpath") entry.onPath = true;
         else if (f.startsWith("docker=")) {
           entry.docker = f.slice("docker=".length);
-          if (!/@sha256:[0-9a-f]{64}$/.test(entry.docker)) {
+          if (!PINNED_IMAGE.test(entry.docker)) {
             errors.push(`${where}: docker image must be pinned by digest (image@sha256:<64 hex>)`);
           }
         } else errors.push(`${where}: unknown flag "${f}"`);
@@ -145,7 +161,7 @@ export function loadManifest(): Manifest {
   if (errors.length > 0) {
     throw new ManifestError(`Invalid manifest ${path}:\n  ${errors.join("\n  ")}`);
   }
-  return { path, tools, versions };
+  return { path, tools, versions, images };
 }
 
 // ---------------------------------------------------------------------------
