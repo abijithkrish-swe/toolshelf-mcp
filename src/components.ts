@@ -29,6 +29,8 @@ export interface VersionEntry {
   version: string;
   isDefault: boolean;
   autoload: boolean;
+  /** Bin dir put on PATH at login without activating the tool (e.g. a client) */
+  onPath: boolean;
   /** Pinned image (image@sha256:...) for docker mode */
   docker?: string;
 }
@@ -109,10 +111,11 @@ export function loadManifest(): Manifest {
       if (versions.some((v) => v.tool === head && v.version === version)) {
         return errors.push(`${where}: duplicate ${head} ${version}`);
       }
-      const entry: VersionEntry = { tool: head, version, isDefault: false, autoload: false };
+      const entry: VersionEntry = { tool: head, version, isDefault: false, autoload: false, onPath: false };
       for (const f of flags) {
         if (f === "default") entry.isDefault = true;
         else if (f === "autoload") entry.autoload = true;
+        else if (f === "onpath") entry.onPath = true;
         else if (f.startsWith("docker=")) {
           entry.docker = f.slice("docker=".length);
           if (!/@sha256:[0-9a-f]{64}$/.test(entry.docker)) {
@@ -123,8 +126,21 @@ export function loadManifest(): Manifest {
       if (entry.isDefault && versions.some((v) => v.tool === head && v.isDefault)) {
         errors.push(`${where}: second default for ${head}`);
       }
+      if (entry.autoload && versions.some((v) => v.tool === head && v.autoload)) {
+        errors.push(`${where}: second autoload for ${head}`);
+      }
+      if (entry.onPath && versions.some((v) => v.tool === head && v.onPath)) {
+        errors.push(`${where}: second onpath for ${head}`);
+      }
       versions.push(entry);
     });
+
+  for (const t of tools) {
+    const vs = versions.filter((v) => v.tool === t.name);
+    if (vs.some((v) => v.autoload) && vs.some((v) => v.onPath)) {
+      errors.push(`${t.name}: autoload and onpath are exclusive (autoload already puts it on PATH)`);
+    }
+  }
 
   if (errors.length > 0) {
     throw new ManifestError(`Invalid manifest ${path}:\n  ${errors.join("\n  ")}`);

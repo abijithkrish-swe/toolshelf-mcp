@@ -43,7 +43,12 @@ function withManifest(fn: (m: Manifest) => ToolResult): ToolResult {
 }
 
 function flags(v: VersionEntry): string {
-  const f = [v.isDefault && "default", v.autoload && "autoload", v.docker && "docker"].filter(Boolean);
+  const f = [
+    v.isDefault && "default",
+    v.autoload && "autoload",
+    v.onPath && "onpath",
+    v.docker && "docker",
+  ].filter(Boolean);
   return f.length ? ` (${f.join(", ")})` : "";
 }
 
@@ -108,11 +113,13 @@ server.tool(
 server.tool(
   "get_defaults",
   "Show default component versions (used when no version is given). " +
-    "'autoload' ones are also activated in the user's interactive login shell.",
+    "'autoload' ones are also activated in the user's interactive login shell; " +
+    "'onpath' ones only have their binaries on the login PATH (not activated). " +
+    "Agent shells get none of these: use get_component_env.",
   async () =>
     withManifest((m) => {
       const lines = m.versions
-        .filter((v) => v.isDefault || v.autoload)
+        .filter((v) => v.isDefault || v.autoload || v.onPath)
         .map((v) => `${v.tool}: ${v.version}${flags(v)}`);
       return text(lines.join("\n") || "No defaults configured.");
     }),
