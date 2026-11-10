@@ -20,7 +20,7 @@ Full design & runbooks: `~/Projects/Personal/zshrc/configured/Docs/AgentComponen
 | `get_defaults` | `default` / `autoload` versions from the manifest |
 | `get_component_env` | Shell exports (`JAVA_HOME`, `PATH`, …) for `{tool: version}`; agents prefix commands with them |
 | `resolve_toolsrc` | A project's `.toolsrc` → exports + the `tools` map for `run` |
-| `run` | Run a command in the macOS sandbox with approved versions: project-only writes, sandbox-only caches, localhost/proxy-only network, secrets unreadable, minimal env, blocklist, timeout, log file |
+| `run` | Run a command in the macOS sandbox with approved versions: project-only writes (cwd must be a project: .git, package.json, pom.xml, … or an empty .toolshelf), sandbox-only caches, localhost/proxy-only network, secrets unreadable, minimal env, blocklist, timeout, log file |
 | `request_component` | Record a request for an unapproved version (`components_requests` in zsh). Never installs |
 | `colima_status` | Colima / Docker / k8s status |
 | `colima_start` / `colima_stop` / `colima_restart` / `colima_delete` / `docker_context_use_colima` | Return the command for the user to run (never executed) |

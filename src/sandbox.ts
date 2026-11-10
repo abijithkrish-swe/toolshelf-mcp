@@ -51,6 +51,13 @@ const FORBIDDEN_PROJECT_ROOTS = [
   "Library", "Components", "Applications",
 ];
 
+// A project dir (or a parent) must contain one of these.
+const PROJECT_MARKERS = [
+  ".git", ".toolshelf", ".toolsrc", "package.json", "pom.xml", "build.gradle",
+  "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "build.xml",
+  "Cargo.toml", "go.mod", "pyproject.toml", "Makefile",
+];
+
 // Never readable from a run: credentials, history, private app data.
 const SECRET_PATHS = [
   ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".config/gcloud",
@@ -87,7 +94,16 @@ export function validateProject(cwd: string): string {
   if (FORBIDDEN_PROJECT_ROOTS.includes(parts[0])) {
     throw new RunError(`cwd ${dir} is inside ~/${parts[0]}, which is never a project folder`);
   }
-  return dir;
+  // A folder of projects (e.g. ~/Projects/Personal) is not a project: require a
+  // marker in cwd or a parent, looking no higher than two levels below $HOME.
+  for (let n = parts.length; n >= 2; n--) {
+    const candidate = join(HOME, ...parts.slice(0, n));
+    if (PROJECT_MARKERS.some((m) => existsSync(join(candidate, m)))) return dir;
+  }
+  throw new RunError(
+    `${dir} doesn't look like a project (none of ${PROJECT_MARKERS.join(", ")} in it or a ` +
+      `parent). Use the project folder itself; add an empty .toolshelf file to mark anything else.`,
+  );
 }
 
 // ---------------------------------------------------------------------------
