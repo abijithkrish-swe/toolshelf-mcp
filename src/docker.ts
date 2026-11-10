@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { findTool, resolveVersion, PINNED_IMAGE, type Manifest } from "./components.js";
-import { CACHE_ROOT } from "./paths.js";
+import { CACHE_ROOT, STATE_ROOT } from "./paths.js";
 import {
   RunError,
   execLogged,
@@ -74,6 +74,18 @@ function pickImage(m: Manifest, tools: Record<string, string>): { image: string;
   return { image: v.docker, tool: def.name, version: v.version };
 }
 
+/**
+ * Remember every pinned image toolshelf runs. `components_images prune` (zsh)
+ * removes only images in this list that the manifest no longer pins, so the
+ * user's own images (e.g. node:22) are never touched.
+ */
+export const IMAGES_LOG = join(STATE_ROOT, "images.log");
+function recordImage(ref: string): void {
+  mkdirSync(STATE_ROOT, { recursive: true });
+  const seen = existsSync(IMAGES_LOG) ? readFileSync(IMAGES_LOG, "utf-8").split("\n") : [];
+  if (!seen.includes(ref)) appendFileSync(IMAGES_LOG, ref + "\n");
+}
+
 /** Maven ignores proxy env vars; give the container a settings.xml. */
 function mavenSettings(port: string): string {
   const path = join(CACHE_ROOT, "docker", "m2-settings.xml");
@@ -98,6 +110,7 @@ function mavenSettings(port: string): string {
 export async function runDocker(m: Manifest, req: DockerRunRequest): Promise<RunResult> {
   const project = validateProject(req.cwd);
   const { image, tool, version } = pickImage(m, req.tools);
+  recordImage(image);
 
   try {
     await docker(["info", "--format", "{{.ServerVersion}}"], 10_000);
@@ -143,6 +156,7 @@ export async function runDocker(m: Manifest, req: DockerRunRequest): Promise<Run
       if (!forwarder) {
         throw new RunError(`network "proxy" needs "@image ${FORWARDER_IMAGE} <image@sha256:…>" in the manifest`);
       }
+      recordImage(forwarder);
       const port = proxyFromEnv().port;
       await docker(["network", "create", "--internal", net]);
       cleanup.push(["network", "rm", net]);
