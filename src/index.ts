@@ -351,48 +351,21 @@ server.tool(
   "colima_status",
   "Show Colima/Docker status: VM state, Docker context, Kubernetes context, and running containers.",
   async () => {
-    const sections: string[] = [];
-
-    // Colima VM status
-    try {
-      const { stdout } = await runZsh("colima status 2>&1");
-      sections.push(`Colima:\n${stdout.trim()}`);
-    } catch {
-      sections.push("Colima: not running");
-    }
-
-    // Colima instances
-    try {
-      const { stdout } = await runZsh("colima list 2>&1");
-      sections.push(`Instances:\n${stdout.trim()}`);
-    } catch {
-      // ignore
-    }
-
-    // Docker context
-    try {
-      const { stdout } = await runZsh("docker context show 2>&1");
-      sections.push(`Docker context: ${stdout.trim()}`);
-    } catch {
-      sections.push("Docker context: none");
-    }
-
-    // Kubernetes context
-    try {
-      const { stdout } = await runZsh("kubectl config current-context 2>&1");
-      sections.push(`Kubernetes context: ${stdout.trim()}`);
-    } catch {
-      sections.push("Kubernetes context: none");
-    }
-
-    // Running containers
-    try {
-      const { stdout } = await runZsh("docker ps --format 'table {{.Names}}\\t{{.Status}}\\t{{.Ports}}' 2>&1");
-      sections.push(`Containers:\n${stdout.trim()}`);
-    } catch {
-      sections.push("Containers: Docker not reachable");
-    }
-
+    // Each command runs directly and in parallel (no interactive zsh per call).
+    const [status, list, context, kube, ps] = await Promise.all([
+      cmd("colima", ["status"]),
+      cmd("colima", ["list"]),
+      cmd("docker", ["context", "show"]),
+      cmd("kubectl", ["config", "current-context"]),
+      cmd("docker", ["ps", "--format", "table {{.Names}}\t{{.Status}}\t{{.Ports}}"]),
+    ]);
+    const sections = [
+      `Colima:\n${status.ok ? colimaMsgs(status.out) : `not running (${colimaMsgs(status.out) || "colima not found"})`}`,
+      ...(list.out ? [`Instances:\n${list.out}`] : []),
+      `Docker context: ${context.ok ? context.out : "none"}`,
+      `Kubernetes context: ${kube.ok ? kube.out : "none"}`,
+      `Containers:\n${ps.ok ? ps.out : "Docker not reachable"}`,
+    ];
     return { content: [{ type: "text", text: sections.join("\n\n") }] };
   },
 );
@@ -488,14 +461,24 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
-// Helper: run a command in the user's zsh
+// colima logs as `time=… level=info msg="…"`; keep just the messages
+function colimaMsgs(s: string): string {
+  return s.replace(/^.*?msg="(.*)"\s*$/gm, "  $1");
+}
+
+// ---------------------------------------------------------------------------
+// Helper: run a CLI directly (PATH + Homebrew), output = stdout+stderr
 // ---------------------------------------------------------------------------
 
-async function runZsh(command: string): Promise<{ stdout: string; stderr: string }> {
-  return execFileAsync("/bin/zsh", ["-i", "-c", command], {
-    timeout: 10_000,
-    env: { ...process.env, HOME: process.env.HOME },
-  });
+async function cmd(bin: string, args: string[]): Promise<{ ok: boolean; out: string }> {
+  const PATH = [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].filter(Boolean).join(":");
+  try {
+    const { stdout, stderr } = await execFileAsync(bin, args, { timeout: 10_000, env: { ...process.env, PATH } });
+    return { ok: true, out: (stdout + stderr).trim() };
+  } catch (err: unknown) {
+    const e = err as { stdout?: string; stderr?: string };
+    return { ok: false, out: `${e.stdout ?? ""}${e.stderr ?? ""}`.trim() };
+  }
 }
 
 // ---------------------------------------------------------------------------
