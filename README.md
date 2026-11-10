@@ -84,7 +84,7 @@ a test manifest.
 | `COMPONENTS` | `~/Components` |
 | `TOOLSHELF_BLOCKLIST` | `$XDG_CONFIG_HOME/agents/blocklist.txt` (missing → every run refused) |
 | `TOOLSHELF_CACHE` | `$XDG_CACHE_HOME/toolshelf` (sandbox-only caches) |
-| `TOOLSHELF_STATE` | `$XDG_STATE_HOME/toolshelf` (run logs, profiles, requests) |
+| `TOOLSHELF_STATE` | `$XDG_STATE_HOME/toolshelf` (run logs, profiles, requests, `blocked.jsonl`: blocklist hits, same format as the dotfiles guard hook) |
 | `TOOLSHELF_PROXY` | `$https_proxy`, else `http://127.0.0.1:3128` (must be localhost) |
 | `TOOLSHELF_HOME` (install.sh only, same as `--prefix`) | `<components>/toolshelf-mcp` |
 

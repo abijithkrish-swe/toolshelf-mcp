@@ -20,7 +20,7 @@ import {
   type Manifest,
   type VersionEntry,
 } from "./components.js";
-import { loadBlocklist, matchBlocklist } from "./blocklist.js";
+import { loadBlocklist, matchBlocklist, recordBlocked } from "./blocklist.js";
 import { readToolsrc } from "./toolsrc.js";
 import { DEFAULT_TAIL_KB, runSandboxed, validateProject } from "./sandbox.js";
 import { runDocker } from "./docker.js";
@@ -252,6 +252,7 @@ server.tool(
       // (which protects them) applies to sandbox mode only.
       const rule = mode === "docker" ? undefined : matchBlocklist(loadBlocklist(), command);
       if (rule) {
+        recordBlocked(rule, command, cwd);
         return fail(
           `Blocked: ${rule.reason}.\nThis command was not run. If the user wants it, they run it ` +
             `themselves; for a missing tool version use request_component.`,

@@ -1,5 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
-import { BLOCKLIST_PATH } from "./paths.js";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { BLOCKLIST_PATH, STATE_ROOT } from "./paths.js";
 
 // ---------------------------------------------------------------------------
 // Blocklist — commands agents must never run. Format per line:
@@ -47,4 +48,28 @@ export function loadBlocklist(): BlockRule[] {
 /** First rule the command matches, or undefined. */
 export function matchBlocklist(rules: BlockRule[], command: string): BlockRule | undefined {
   return rules.find((r) => r.pattern.test(command));
+}
+
+/** Where blocked commands are logged, one JSON object per line (shared with guard.sh). */
+export const BLOCKED_LOG = join(STATE_ROOT, "blocked.jsonl");
+
+/**
+ * Log a blocked `run`, same record shape as the Claude Code guard hook, for
+ * toolshelf_report. Best effort: a logging failure never changes the decision.
+ */
+export function recordBlocked(rule: BlockRule, command: string, cwd: string): void {
+  try {
+    mkdirSync(STATE_ROOT, { recursive: true });
+    const rec = {
+      command: command.slice(0, 2000),
+      cwd,
+      match: command.match(rule.pattern)?.[0] ?? "",
+      reason: rule.reason,
+      source: "run",
+      ts: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+    };
+    appendFileSync(BLOCKED_LOG, JSON.stringify(rec) + "\n");
+  } catch {
+    // ignore
+  }
 }
