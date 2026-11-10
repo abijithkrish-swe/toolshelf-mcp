@@ -132,6 +132,7 @@ export async function runDocker(m: Manifest, req: DockerRunRequest): Promise<Run
     GOFLAGS: "-modcacherw",
     GOTOOLCHAIN: "local",
     MAVEN_CONFIG: "", // the maven image sets it, and mvn passes it on as an argument
+    PIP_DISABLE_PIP_VERSION_CHECK: "1",
   };
   const javaOpts = ["-Duser.home=/tmp"];
 

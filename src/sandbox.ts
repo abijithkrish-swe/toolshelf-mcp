@@ -152,6 +152,7 @@ function prepareCaches(m: Manifest, proxy: Proxy) {
     cargo: join(CACHE_ROOT, "cargo"),
     gopath: join(CACHE_ROOT, "go"),
     gocache: join(CACHE_ROOT, "go-build"),
+    pip: join(CACHE_ROOT, "pip"),
     tmp: join(CACHE_ROOT, "tmp"),
   };
   for (const d of Object.values(dirs)) mkdirSync(d, { recursive: true });
@@ -252,6 +253,9 @@ function buildEnv(
     GOFLAGS: "-modcacherw",
     GOTOOLCHAIN: "local",
     GOENV: "off",
+    // pip's default cache is in ~/Library, which the sandbox can't read or write
+    PIP_CACHE_DIR: caches.pip,
+    PIP_DISABLE_PIP_VERSION_CHECK: "1",
     TOOLSHELF_SANDBOX: "1",
   };
   for (const [k, v] of comp.vars) env[k] = v;
