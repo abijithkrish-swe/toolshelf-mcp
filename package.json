@@ -1,0 +1,26 @@
+{
+  "name": "toolshelf-mcp",
+  "version": "2.0.0",
+  "description": "MCP server exposing the approved ~/Components toolshelf to AI agents",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "toolshelf-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,4 @@
+# Merge into ~/.codex/config.toml
+[mcp_servers.toolshelf]
+command = "/Users/<you>/Components/Node/20.19.5/bin/node"
+args    = ["/Users/<you>/Components/toolshelf-mcp/dist/index.js"]

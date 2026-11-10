@@ -1,0 +1,23 @@
+# Dependencies & build output (install.sh builds a staging copy; nothing here is committed)
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Logs
+npm-debug.log*
+*.log
+
+# Local env / secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Test & coverage output
+coverage/
+
+# Editors & OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
