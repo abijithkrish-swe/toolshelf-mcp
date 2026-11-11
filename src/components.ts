@@ -77,7 +77,8 @@ export function loadManifest(): Manifest {
   readFileSync(path, "utf-8")
     .split("\n")
     .forEach((raw, i) => {
-      const line = raw.replace(/#.*$/, "").trim();
+      // \r first: "." doesn't match it, so a CRLF comment would survive /#.*$/
+      const line = raw.replace(/\r$/, "").replace(/#.*$/, "").trim();
       if (!line) return;
       const where = `line ${i + 1}`;
       const [head, ...rest] = line.split(/\s+/);

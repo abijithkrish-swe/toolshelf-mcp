@@ -16,7 +16,7 @@ npm test         # tsc + node --test test/*.test.mjs
 npm run dev      # tsc --watch
 ```
 
-Tests: `test/*.test.mjs` (Node's built-in runner, against `dist/`); see the README table. Each file sets up a fake `$HOME` via `test/helpers.mjs` **before** importing from `dist/` (paths are read at module load). Add a test with every behaviour change. Real-sandbox tests skip inside toolshelf's own sandbox (`TOOLSHELF_SANDBOX` set); run the full suite from a terminal. `install.sh` runs the suite and refuses to install on a failure.
+Tests: `test/*.test.mjs` (Node's built-in runner, against `dist/`); see the README table. Each file sets up a fake `$HOME` via `test/helpers.mjs` **before** importing from `dist/` (paths are read at module load). Add a test with every behaviour change. Real-sandbox tests skip inside toolshelf's own sandbox (`TOOLSHELF_SANDBOX` set); run the full suite from a terminal. `install.sh` runs the suite and refuses to install on a failure. The manifest is also parsed by zsh (dotfiles `70-components-core.zsh`); after any parser change run the dotfiles parity check, `TOOLSHELF_DIST=$PWD/dist zsh -f ~/Projects/Personal/zshrc/configured/tests/components/parity.zsh`, and change both parsers together.
 
 ## Architecture
 

@@ -47,6 +47,13 @@ test("comments and blank lines are ignored, including trailing comments", () => 
   assert.equal(m.versions[0].isDefault, true);
 });
 
+test("CRLF line endings parse like LF (comments included)", () => {
+  const m = load("# made on Windows\r\n@tool t dir=T # c\r\nt 17 default\r\nt 25\r\n");
+  assert.equal(typeof m, "object", m);
+  assert.deepEqual(m.versions.map((v) => v.version), ["17", "25"]);
+  assert.equal(m.tools[0].dir, "T");
+});
+
 test("autoload and onpath flags", () => {
   const m = load("@tool t dir=T\nt 1 autoload\n@tool u dir=U\nu 2 onpath\n");
   assert.equal(m.versions[0].autoload, true);
