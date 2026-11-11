@@ -18,6 +18,7 @@ const m = loadManifest();
 const project = makeProject(env.home, "app");
 put(join(env.home, ".ssh", "id_test"), "PRIVATE KEY\n");
 put(join(env.home, ".config", "secrets", "vault.store"), "VAULT\n");
+put(join(env.home, ".codex", "auth.json"), '{"tokens":"CODEX-TOKEN"}\n');
 
 process.env.PARENT_SECRET = "hunter2";
 
@@ -68,6 +69,13 @@ test("secrets are unreadable", { skip }, async () => {
   assert.match(r.tail, /\.ssh\/id_test: Operation not permitted/);
   assert.match(r.tail, /vault\.store: Operation not permitted/);
   assert.match(r.tail, /ls: .*\.ssh: Operation not permitted/, "not even listable");
+});
+
+test("agent app credentials are unreadable (Codex / ChatGPT: ~/.codex)", { skip }, async () => {
+  const r = await run("cat ~/.codex/auth.json 2>&1; ls ~/.codex 2>&1; true");
+  assert.doesNotMatch(r.tail, /CODEX-TOKEN/);
+  assert.match(r.tail, /\.codex\/auth\.json: Operation not permitted/);
+  assert.match(r.tail, /ls: .*\.codex: Operation not permitted/);
 });
 
 test("network: localhost TCP allowed, unix sockets denied", { skip }, async (t) => {

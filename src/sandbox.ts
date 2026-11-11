@@ -66,6 +66,8 @@ const SECRET_PATHS = [
   ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".config/gcloud",
   ".config/secrets", ".config/gh", ".config/docker", ".config/npm",
   ".config/claude-personal", ".claude", ".claude.json", ".netrc", ".git-credentials",
+  ".codex", // Codex / ChatGPT app: auth.json holds login tokens; config, rules, sessions
+
   ".npmrc", ".m2/settings.xml", ".m2/settings-security.xml",
   ".local/share/gradle/gradle.properties", ".local/share/cargo/credentials.toml",
   ".zshcache", ".zsh_history", ".bash_history", "Library",
