@@ -62,7 +62,23 @@ Safety:
 
 `<prefix>/INSTALLED` records the source revision, node, paths and date.
 `--register` passes `COMPONENTS` and `COMPONENTS_MANIFEST` to the server, so
-non-default layouts work at runtime. Re-run it after changing the default `node`
+non-default layouts work at runtime. It registers toolshelf in every client it
+finds:
+- **Claude Code:** the default config and `~/.config/claude-personal`
+  (`myclaude`), via `claude mcp add`.
+- **Claude app** (Chat / Cowork): `~/Library/Application Support/Claude/claude_desktop_config.json`.
+- **Codex** (CLI, and the Codex part of the ChatGPT app): `~/.codex/config.toml`.
+
+`scripts/register.mjs` writes the Claude app and Codex entries. It:
+- writes the `toolshelf` entry only;
+- edits Codex's TOML as text, so comments and order survive;
+- backs up each file (`<file>.bak-<timestamp>`) before any write, and skips
+  files that are already up to date;
+- reports stale servers, i.e. ones whose script no longer exists. In a
+  terminal it asks before removing them.
+
+Restart the Claude app and ChatGPT afterwards. To preview:
+`node scripts/register.mjs --node … --server … --components … --manifest … --dry-run`. Re-run it after changing the default `node`
 in the manifest, because the registration points at that node's absolute path.
 
 ## Development

@@ -27,7 +27,7 @@ Tests: `test/*.test.mjs` (Node's built-in runner, against `dist/`); see the READ
 - **`instructions.ts`** — reads the user's `~/.config/agents/AGENTS.md` (single source, in the dotfiles) at startup and sends it as MCP server instructions, so every client (Claude app, Codex/ChatGPT, VS Code) gets the rules even without reading that file. Missing file → a short built-in fallback. Never copy rule text into this repo; size and content checks live in the dotfiles (`tests/agents/agents-md-test.pl`).
 - **`blocklist.ts`** — loads `<regex> ## <reason>` rules (fail closed). **`toolsrc.ts`** — `.toolsrc` parsing. **`paths.ts`** — XDG locations.
 
-`config/` holds registration snippets for Claude Code, VS Code and Codex.
+`config/` holds registration snippets for Claude Code, VS Code and Codex (manual use only). **`scripts/register.mjs`** — run by `install.sh --register` after the Claude Code step: writes the toolshelf entry into the Claude app's JSON and Codex's TOML (text edit, backup first, idempotent), reports stale servers, removes them with `--remove-stale`. Tests: `test/register.test.mjs`.
 
 ## Key Design Decisions
 

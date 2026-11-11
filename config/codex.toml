@@ -1,4 +1,6 @@
-# Merge into ~/.codex/config.toml
+# What install.sh --register writes into ~/.codex/config.toml (Codex CLI and the
+# Codex part of the ChatGPT app). Use this only to register by hand.
 [mcp_servers.toolshelf]
 command = "/Users/<you>/Components/Node/20.19.5/bin/node"
-args    = ["/Users/<you>/Components/toolshelf-mcp/dist/index.js"]
+args = ["/Users/<you>/Components/toolshelf-mcp/dist/index.js"]
+env = { COMPONENTS = "/Users/<you>/Components", COMPONENTS_MANIFEST = "/Users/<you>/.config/components/components.conf" }

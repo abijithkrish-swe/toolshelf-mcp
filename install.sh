@@ -100,7 +100,7 @@ STAGE=$(mktemp -d "$(dirname "$TARGET")/.toolshelf-mcp.stage.XXXXXX")
 trap 'rm -rf "$STAGE"' EXIT
 
 echo "==> Copying source to staging"
-for f in package.json package-lock.json tsconfig.json README.md src config test; do
+for f in package.json package-lock.json tsconfig.json README.md src config scripts test; do
   cp -R "$SRC/$f" "$STAGE/"
 done
 
@@ -167,6 +167,30 @@ if $REGISTER; then
     echo "==> Registering in Claude Code ($PERSONAL)"
     (CLAUDE_CONFIG_DIR=$PERSONAL; export CLAUDE_CONFIG_DIR; register)
   fi
+
+  # The Claude app and Codex (CLI + ChatGPT app) have no CLI for this:
+  # scripts/register.mjs edits their config files (backup first, toolshelf only).
+  echo "==> Registering in the Claude app and Codex"
+  set -- --node "$NODE_BIN/node" --server "$TARGET/dist/index.js" \
+    --components "$COMPONENTS" --manifest "$MANIFEST"
+  OUT=$(node "$TARGET/scripts/register.mjs" "$@") || die "registering in the Claude app / Codex failed"
+  echo "$OUT" | grep -v '^stale: ' | sed 's/^/    /'
+  STALE=$(echo "$OUT" | sed -n 's/^stale: //p')
+  if [ -n "$STALE" ]; then
+    echo "    Stale MCP servers (their script no longer exists, so they fail at every start):"
+    echo "$STALE" | sed 's/^/      /'
+    if [ -t 0 ]; then
+      printf "    Remove them? (a backup is made first) [y/N] "
+      read -r ANSWER
+      case "$ANSWER" in
+        y|Y|yes) node "$TARGET/scripts/register.mjs" "$@" --remove-stale | sed 's/^/    /' ;;
+        *) echo "    Kept." ;;
+      esac
+    else
+      echo "    Re-run ./install.sh --register in a terminal to remove them."
+    fi
+  fi
+  echo "    Restart the Claude app and ChatGPT/Codex to load the change."
 else
   echo "Register (once, or after changing the default node or paths):"
   echo "  claude mcp add toolshelf -s user -e 'COMPONENTS=$COMPONENTS' -e 'COMPONENTS_MANIFEST=$MANIFEST' -- '$NODE_BIN/node' '$TARGET/dist/index.js'"

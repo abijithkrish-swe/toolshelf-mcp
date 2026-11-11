@@ -3,7 +3,11 @@
     "toolshelf": {
       "type": "stdio",
       "command": "/Users/<you>/Components/Node/20.19.5/bin/node",
-      "args": ["/Users/<you>/Components/toolshelf-mcp/dist/index.js"]
+      "args": ["/Users/<you>/Components/toolshelf-mcp/dist/index.js"],
+      "env": {
+        "COMPONENTS": "/Users/<you>/Components",
+        "COMPONENTS_MANIFEST": "/Users/<you>/.config/components/components.conf"
+      }
     }
   }
 }
