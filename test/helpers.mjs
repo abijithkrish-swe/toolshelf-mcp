@@ -33,6 +33,8 @@ export const BLOCKLIST = `# test blocklist
 npm\\s+(i|install)\\s+(-g|--global) ## global package installs
 `;
 
+export const AGENTS_MD = "# Test rules\n\n1. Do the test thing.\n2. Do not do the other thing.\n";
+
 /** Write a file, creating parent dirs. */
 export function put(path, content = "", mode) {
   mkdirSync(dirname(path), { recursive: true });
@@ -55,6 +57,7 @@ export function setupHome({ manifest = MANIFEST, blocklist = BLOCKLIST } = {}) {
 
   put(join(home, ".config", "components", "components.conf"), manifest);
   put(join(home, ".config", "agents", "blocklist.txt"), blocklist);
+  put(join(home, ".config", "agents", "AGENTS.md"), AGENTS_MD);
 
   Object.assign(process.env, {
     HOME: home,

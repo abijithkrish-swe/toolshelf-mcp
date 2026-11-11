@@ -97,6 +97,7 @@ from a terminal for the full suite.
 |-----|---------|
 | `COMPONENTS_MANIFEST` | `~/.config/components/components.conf` |
 | `COMPONENTS` | `~/Components` |
+| `TOOLSHELF_AGENTS_MD` | `$XDG_CONFIG_HOME/agents/AGENTS.md`, the agent rules sent as server instructions (missing → short fallback) |
 | `TOOLSHELF_BLOCKLIST` | `$XDG_CONFIG_HOME/agents/blocklist.txt` (missing → every run refused) |
 | `TOOLSHELF_CACHE` | `$XDG_CACHE_HOME/toolshelf` (sandbox-only caches) |
 | `TOOLSHELF_STATE` | `$XDG_STATE_HOME/toolshelf` (run logs, profiles, requests, `blocked.jsonl`: blocklist hits, same format as the dotfiles guard hook) |

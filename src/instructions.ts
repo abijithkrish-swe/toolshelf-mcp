@@ -1,17 +1,24 @@
+import { readFileSync } from "node:fs";
+import { AGENTS_MD_PATH } from "./paths.js";
+
 // ---------------------------------------------------------------------------
-// Server instructions: the agent rules, sent to every MCP client at connect
-// (Claude Code, the Claude app, Codex / ChatGPT, VS Code …). Clients that never
-// see the user's AGENTS.md still get the essentials this way.
+// Server instructions: the user's agent rules, sent to every MCP client at
+// connect (Claude Code, the Claude app, Codex / ChatGPT, VS Code …), so apps
+// that never read AGENTS.md still get them.
 //
-// Compact on purpose: it costs tokens in every session, and Claude Code also
-// loads the full rules (dotfiles DotFiles/config/agents/AGENTS.md). Keep the
-// two in sync: a rule added there that matters for tool use belongs here too.
+// Single source: ~/.config/agents/AGENTS.md (dotfiles), read once at startup.
+// Edit it there and deploy; clients get the new text on their next connect.
+// Missing file (e.g. dotfiles not deployed yet) → a short built-in fallback.
 // ---------------------------------------------------------------------------
 
-export const INSTRUCTIONS = `toolshelf provides the user's approved developer tools. Rules:
-1. Use only versions toolshelf lists (list_components, get_component_env, resolve_toolsrc). Not Homebrew or other tools on PATH.
-2. Never install, upgrade or remove tools, runtimes or global packages: no brew, sudo, rustup, nvm, sdkman, pyenv, npm -g, pip outside a project venv, cargo install, npx -y, curl | sh. If a version is missing, call request_component and tell the user.
-3. Build and test with run (macOS sandbox: project-only writes, proxy-only network, no secrets). Untrusted code (unknown repos, downloaded scripts, unreviewed generated code): run with mode "docker", one tool per run; network is off unless network "proxy".
-4. run is for builds, tests and scripts, not for editing files. Temp files go in $TMPDIR. Use quiet flags (mvn -q, gradle -q, npm --silent) and tail_kb instead of piping to tail.
-5. Don't change toolchain versions (Gradle/Maven wrappers, Docker images, Gradle JDK auto-download, GOTOOLCHAIN). Ask before adding or upgrading project dependencies.
-6. Never read or print secrets: ~/.ssh, ~/.config/secrets, tokens, .env files.`;
+export const FALLBACK = `toolshelf provides the user's approved developer tools. The agent rules file (${AGENTS_MD_PATH}) is missing, so tell the user. Until it is back: do not install, upgrade or remove tools (call request_component for a missing version); use run for builds and tests, with mode "docker" for untrusted code; do not read secrets.`;
+
+export function loadInstructions(): string {
+  try {
+    const text = readFileSync(AGENTS_MD_PATH, "utf-8").trim();
+    if (text) return text;
+  } catch {
+    // fall through
+  }
+  return FALLBACK;
+}

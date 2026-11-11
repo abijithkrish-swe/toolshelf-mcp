@@ -17,6 +17,10 @@ export const XDG_STATE_HOME = xdg("XDG_STATE_HOME", ".local/state");
 export const BLOCKLIST_PATH =
   process.env.TOOLSHELF_BLOCKLIST || join(XDG_CONFIG_HOME, "agents", "blocklist.txt");
 
+/** The agent rules (dotfiles DotFiles/config/agents/AGENTS.md), sent as server instructions. */
+export const AGENTS_MD_PATH =
+  process.env.TOOLSHELF_AGENTS_MD || join(XDG_CONFIG_HOME, "agents", "AGENTS.md");
+
 /** Sandbox-only caches (m2, gradle, npm, cargo, go) — never the user's own. */
 export const CACHE_ROOT = process.env.TOOLSHELF_CACHE || join(XDG_CACHE_HOME, "toolshelf");
 

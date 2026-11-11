@@ -5,7 +5,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { DIST, IN_SANDBOX, MANIFEST, makeProject, setupHome } from "./helpers.mjs";
+import { AGENTS_MD, DIST, IN_SANDBOX, MANIFEST, makeProject, setupHome } from "./helpers.mjs";
 
 const env = setupHome();
 const project = makeProject(env.home, "app");
@@ -40,14 +40,28 @@ test("exposes the expected tools", async () => {
   assert.match(JSON.stringify(run.inputSchema), /TMPDIR/);
 });
 
-test("sends the agent rules as server instructions", () => {
-  const text = client.getInstructions();
-  assert.ok(text, "no instructions in the initialize result");
-  for (const rule of [/Never install, upgrade or remove/, /request_component/, /mode "docker"/,
-    /network "proxy"/, /not for editing files/, /\$TMPDIR/, /Never read or print secrets/]) {
-    assert.match(text, rule);
+test("sends the user's AGENTS.md as server instructions, word for word", () => {
+  assert.equal(client.getInstructions(), AGENTS_MD.trim());
+});
+
+test("without AGENTS.md, sends a short fallback that says so", async () => {
+  const c = new Client({ name: "toolshelf-test-fallback", version: "1.0.0" });
+  await c.connect(
+    new StdioClientTransport({
+      command: process.execPath,
+      args: [join(DIST, "index.js")],
+      env: { ...process.env, TOOLSHELF_AGENTS_MD: join(env.home, "no-such-AGENTS.md") },
+    }),
+  );
+  try {
+    const text = c.getInstructions();
+    assert.match(text, /rules file .*no-such-AGENTS\.md\) is missing, so tell the user/);
+    assert.match(text, /do not install, upgrade or remove tools/);
+    assert.match(text, /request_component/);
+    assert.match(text, /mode "docker"/);
+  } finally {
+    await c.close();
   }
-  assert.ok(text.length < 1500, `instructions are sent every session; keep them short (${text.length} chars)`);
 });
 
 test("list_components shows only the manifest's tools", async () => {

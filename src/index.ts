@@ -25,7 +25,7 @@ import { readToolsrc } from "./toolsrc.js";
 import { DEFAULT_TAIL_KB, runSandboxed, sandboxDenied, validateProject } from "./sandbox.js";
 import { runDocker } from "./docker.js";
 import { REQUESTS_PATH } from "./paths.js";
-import { INSTRUCTIONS } from "./instructions.js";
+import { loadInstructions } from "./instructions.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -39,7 +39,7 @@ const server = new McpServer(
     version: "2.0.0",
   },
   // The rules reach every client this way, even ones that never load AGENTS.md
-  { instructions: INSTRUCTIONS },
+  { instructions: loadInstructions() },
 );
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
