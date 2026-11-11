@@ -53,6 +53,7 @@ or test leaves the live install untouched (`--skip-tests` to bypass).
 | `--manifest FILE` | env `COMPONENTS_MANIFEST`, else `~/.config/components/components.conf` |
 | `--register` | off |
 | `--skip-tests` | off: tests run before every install |
+| `--print-config` | print how to register in Codex / ChatGPT, the Claude app and Cursor, then exit |
 
 Safety:
 - The installer refuses an install dir inside the source tree, `/`, `$HOME`, or
@@ -62,23 +63,21 @@ Safety:
 
 `<prefix>/INSTALLED` records the source revision, node, paths and date.
 `--register` passes `COMPONENTS` and `COMPONENTS_MANIFEST` to the server, so
-non-default layouts work at runtime. It registers toolshelf in every client it
-finds:
-- **Claude Code:** the default config and `~/.config/claude-personal`
-  (`myclaude`), via `claude mcp add`.
-- **Claude app** (Chat / Cowork): `~/Library/Application Support/Claude/claude_desktop_config.json`.
-- **Codex** (CLI, and the Codex part of the ChatGPT app): `~/.codex/config.toml`.
+non-default layouts work at runtime. It registers **Claude Code**: the default
+config and `~/.config/claude-personal` (`myclaude`), via `claude mcp add`.
 
-`scripts/register.mjs` writes the Claude app and Codex entries. It:
-- writes the `toolshelf` entry only;
-- edits Codex's TOML as text, so comments and order survive;
-- backs up each file (`<file>.bak-<timestamp>`) before any write, and skips
-  files that are already up to date;
-- reports stale servers, i.e. ones whose script no longer exists. In a
-  terminal it asks before removing them.
+**Other apps you register by hand**, so you see every change to their
+configs. `./install.sh --print-config` prints, with this machine's paths:
+- **Codex** (the CLI, and Codex in the ChatGPT app; both use
+  `~/.codex/config.toml`): one `codex mcp add …` command. It uses the
+  ChatGPT app's bundled `codex` when none is on PATH.
+- **Claude app** (Chat / Cowork): the JSON for `mcpServers` in
+  `~/Library/Application Support/Claude/claude_desktop_config.json`.
+- **Cursor:** the same JSON, for `~/.cursor/mcp.json`.
 
-Restart the Claude app and ChatGPT afterwards. To preview:
-`node scripts/register.mjs --node … --server … --components … --manifest … --dry-run`. Re-run it after changing the default `node`
+Install prints this on the first install and whenever the node path changes,
+because every registration points at that absolute path. Restart each app
+after changing it. Re-run it after changing the default `node`
 in the manifest, because the registration points at that node's absolute path.
 
 ## Development

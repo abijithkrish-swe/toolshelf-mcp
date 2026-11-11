@@ -14,9 +14,15 @@
 #                                               ~/.config/components/components.conf)
 #   --register         also (re)register in Claude Code (user scope) — default
 #                      config and ~/.config/claude-personal if it exists
+#   --print-config     only print how to register in the other apps (Codex /
+#                      ChatGPT, Claude app, Cursor), with this machine's paths
 #   --skip-tests       don't run the test suite before installing (it runs in a
 #                      fake $HOME and takes a few seconds; a failure aborts)
 #   -h, --help         show this help
+#
+# Other apps are registered by hand from --print-config: you see each change.
+# It is printed after the first install and whenever the node path changes
+# (every registration points at that absolute path).
 #
 # Env fallbacks: TOOLSHELF_HOME (= --prefix), COMPONENTS, COMPONENTS_MANIFEST.
 # The components root and manifest are passed to the server at registration,
@@ -47,6 +53,7 @@ COMPONENTS=${COMPONENTS:-$HOME/Components}
 MANIFEST=${COMPONENTS_MANIFEST:-$HOME/.config/components/components.conf}
 REGISTER=false
 RUN_TESTS=true
+PRINT_ONLY=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -58,6 +65,7 @@ while [ $# -gt 0 ]; do
     --manifest=*)   MANIFEST=${1#*=} ;;
     --register)     REGISTER=true ;;
     --skip-tests)   RUN_TESTS=false ;;
+    --print-config) PRINT_ONLY=true ;;
     -h|--help)      usage; exit 0 ;;
     *)              usage >&2; exit 2 ;;
   esac
@@ -89,6 +97,44 @@ NODE_BIN=$COMPONENTS/$NODE_DIR/$NODE_VER/bin
 PATH=$NODE_BIN:$PATH
 export PATH
 
+# --- Other MCP clients: printed instructions, applied by hand -----------------
+# Single-quote a value for a pasteable shell command.
+sq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+print_config() {
+  server=$TARGET/dist/index.js
+  codex=$(command -v codex 2>/dev/null || true)
+  [ -n "$codex" ] || [ ! -x /Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex ] \
+    || codex=/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex
+  # JSON built by node, so paths are escaped correctly
+  entry=$(node -e 'const [n, s, c, m] = process.argv.slice(1);
+    console.log(JSON.stringify({ mcpServers: { toolshelf: { command: n, args: [s],
+      env: { COMPONENTS: c, COMPONENTS_MANIFEST: m } } } }, null, 2));' \
+    "$NODE_BIN/node" "$server" "$COMPONENTS" "$MANIFEST")
+  cat <<EOF
+==> Register toolshelf in your other apps (by hand; restart each app afterwards)
+
+Codex — the CLI and Codex in the ChatGPT app share ~/.codex/config.toml:
+  $(sq "${codex:-codex}") mcp remove toolshelf >/dev/null 2>&1; $(sq "${codex:-codex}") mcp add toolshelf --env $(sq "COMPONENTS=$COMPONENTS") --env $(sq "COMPONENTS_MANIFEST=$MANIFEST") -- $(sq "$NODE_BIN/node") $(sq "$server")
+  (check with: $(sq "${codex:-codex}") mcp list)
+
+Claude app (Chat / Cowork) — merge into "mcpServers" in
+  ~/Library/Application Support/Claude/claude_desktop_config.json
+$entry
+
+Cursor — merge into "mcpServers" in ~/.cursor/mcp.json (create the file with this if it's missing)
+$entry
+
+Old entries: remove any server that points at the retired MyComponentsMCP
+(Codex: '<codex>' mcp list, then mcp remove <name>; the apps: delete it from the JSON).
+EOF
+}
+if $PRINT_ONLY; then
+  print_config
+  exit 0
+fi
+# Registrations point at the node path; when it changes, they all need redoing.
+OLD_NODE=$(sed -n 's/^node=//p' "$TARGET/INSTALLED" 2>/dev/null || true)
+
 echo "==> Installing to $TARGET"
 echo "    components: $COMPONENTS"
 echo "    manifest:   $MANIFEST"
@@ -100,7 +146,7 @@ STAGE=$(mktemp -d "$(dirname "$TARGET")/.toolshelf-mcp.stage.XXXXXX")
 trap 'rm -rf "$STAGE"' EXIT
 
 echo "==> Copying source to staging"
-for f in package.json package-lock.json tsconfig.json README.md src config scripts test; do
+for f in package.json package-lock.json tsconfig.json README.md install.sh src config test; do
   cp -R "$SRC/$f" "$STAGE/"
 done
 
@@ -167,31 +213,15 @@ if $REGISTER; then
     echo "==> Registering in Claude Code ($PERSONAL)"
     (CLAUDE_CONFIG_DIR=$PERSONAL; export CLAUDE_CONFIG_DIR; register)
   fi
-
-  # The Claude app and Codex (CLI + ChatGPT app) have no CLI for this:
-  # scripts/register.mjs edits their config files (backup first, toolshelf only).
-  echo "==> Registering in the Claude app and Codex"
-  set -- --node "$NODE_BIN/node" --server "$TARGET/dist/index.js" \
-    --components "$COMPONENTS" --manifest "$MANIFEST"
-  OUT=$(node "$TARGET/scripts/register.mjs" "$@") || die "registering in the Claude app / Codex failed"
-  echo "$OUT" | grep -v '^stale: ' | sed 's/^/    /'
-  STALE=$(echo "$OUT" | sed -n 's/^stale: //p')
-  if [ -n "$STALE" ]; then
-    echo "    Stale MCP servers (their script no longer exists, so they fail at every start):"
-    echo "$STALE" | sed 's/^/      /'
-    if [ -t 0 ]; then
-      printf "    Remove them? (a backup is made first) [y/N] "
-      read -r ANSWER
-      case "$ANSWER" in
-        y|Y|yes) node "$TARGET/scripts/register.mjs" "$@" --remove-stale | sed 's/^/    /' ;;
-        *) echo "    Kept." ;;
-      esac
-    else
-      echo "    Re-run ./install.sh --register in a terminal to remove them."
-    fi
-  fi
-  echo "    Restart the Claude app and ChatGPT/Codex to load the change."
 else
-  echo "Register (once, or after changing the default node or paths):"
-  echo "  claude mcp add toolshelf -s user -e 'COMPONENTS=$COMPONENTS' -e 'COMPONENTS_MANIFEST=$MANIFEST' -- '$NODE_BIN/node' '$TARGET/dist/index.js'"
+  echo "Register in Claude Code (once, or after changing the default node or paths): ./install.sh --register"
+fi
+
+# Other apps: by hand. Show how on the first install and when the node path changed.
+if [ "$OLD_NODE" != "$NODE_BIN/node" ]; then
+  echo ""
+  [ -n "$OLD_NODE" ] && echo "!!  The node path changed ($OLD_NODE → $NODE_BIN/node): re-register every app."
+  print_config
+else
+  echo "Other apps (Codex / ChatGPT, Claude app, Cursor): ./install.sh --print-config"
 fi
