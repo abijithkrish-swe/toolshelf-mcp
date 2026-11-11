@@ -40,6 +40,16 @@ test("exposes the expected tools", async () => {
   assert.match(JSON.stringify(run.inputSchema), /TMPDIR/);
 });
 
+test("sends the agent rules as server instructions", () => {
+  const text = client.getInstructions();
+  assert.ok(text, "no instructions in the initialize result");
+  for (const rule of [/Never install, upgrade or remove/, /request_component/, /mode "docker"/,
+    /network "proxy"/, /not for editing files/, /\$TMPDIR/, /Never read or print secrets/]) {
+    assert.match(text, rule);
+  }
+  assert.ok(text.length < 1500, `instructions are sent every session; keep them short (${text.length} chars)`);
+});
+
 test("list_components shows only the manifest's tools", async () => {
   const r = await call("list_components");
   assert.equal(r.error, false, r.text);

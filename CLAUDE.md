@@ -24,6 +24,7 @@ Tests: `test/*.test.mjs` (Node's built-in runner, against `dist/`); see the READ
 - **`index.ts`** — MCP tools: `list_components`, `get_component_versions`, `get_defaults`, `get_component_env`, `resolve_toolsrc`, `run`, `request_component`, plus colima tools that only return commands.
 - **`docker.ts`** — `run` docker mode: one pinned image per run (manifest `docker=`), per-run internal network + `@image proxy-forwarder` for `network: "proxy"`, container limits, cleanup.
 - **`sandbox.ts`** — `run`: project-dir validation, sandbox-only caches (generated Maven settings.xml / Gradle gradle.properties with proxy), minimal env, generated `sandbox-exec` profile (writes: project + caches; reads: no secrets/~/Library; network: localhost only), process-group timeout, log files.
+- **`instructions.ts`** — the agent rules in compact form, sent as MCP server instructions so every client (Claude app, Codex/ChatGPT, VS Code) gets them even without `AGENTS.md`. Keep in sync with the dotfiles' `DotFiles/config/agents/AGENTS.md`; a test checks the key rules are present and the text stays under 1500 chars.
 - **`blocklist.ts`** — loads `<regex> ## <reason>` rules (fail closed). **`toolsrc.ts`** — `.toolsrc` parsing. **`paths.ts`** — XDG locations.
 
 `config/` holds registration snippets for Claude Code, VS Code and Codex.

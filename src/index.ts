@@ -25,6 +25,7 @@ import { readToolsrc } from "./toolsrc.js";
 import { DEFAULT_TAIL_KB, runSandboxed, sandboxDenied, validateProject } from "./sandbox.js";
 import { runDocker } from "./docker.js";
 import { REQUESTS_PATH } from "./paths.js";
+import { INSTRUCTIONS } from "./instructions.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -32,10 +33,14 @@ const execFileAsync = promisify(execFile);
 // Server
 // ---------------------------------------------------------------------------
 
-const server = new McpServer({
-  name: "toolshelf",
-  version: "2.0.0",
-});
+const server = new McpServer(
+  {
+    name: "toolshelf",
+    version: "2.0.0",
+  },
+  // The rules reach every client this way, even ones that never load AGENTS.md
+  { instructions: INSTRUCTIONS },
+);
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
