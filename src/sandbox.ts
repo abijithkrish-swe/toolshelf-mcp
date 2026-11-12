@@ -155,6 +155,7 @@ function prepareCaches(m: Manifest, proxy: Proxy) {
     gopath: join(CACHE_ROOT, "go"),
     gocache: join(CACHE_ROOT, "go-build"),
     pip: join(CACHE_ROOT, "pip"),
+    pnpm: join(CACHE_ROOT, "pnpm"),
     tmp: join(CACHE_ROOT, "tmp"),
   };
   for (const d of Object.values(dirs)) mkdirSync(d, { recursive: true });
@@ -248,6 +249,14 @@ function buildEnv(
     npm_config_userconfig: "/dev/null",
     npm_config_update_notifier: "false",
     npm_config_fund: "false",
+    // pnpm: its macOS defaults (~/Library/pnpm, ~/Library/Caches/pnpm) are outside
+    // the sandbox. And never let it fetch the pnpm version a project's
+    // packageManager field asks for: toolchain versions come from the manifest.
+    PNPM_HOME: join(caches.pnpm, "home"),
+    npm_config_store_dir: join(caches.pnpm, "store"),
+    npm_config_cache_dir: join(caches.pnpm, "cache"),
+    npm_config_state_dir: join(caches.pnpm, "state"),
+    npm_config_manage_package_manager_versions: "false",
     CARGO_HOME: caches.cargo,
     CARGO_HTTP_PROXY: proxy.url,
     GOPATH: caches.gopath,

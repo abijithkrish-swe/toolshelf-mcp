@@ -39,6 +39,19 @@ test("the environment is rebuilt, not inherited", { skip }, async () => {
   assert.doesNotMatch(r.tail, /homebrew|\.local\/bin/, "only component bins + system dirs on PATH");
 });
 
+test("pnpm keeps its store, cache and state in the sandbox caches, never ~/Library", { skip }, async () => {
+  const r = await run(
+    'echo "home=$PNPM_HOME"; echo "store=$npm_config_store_dir"; echo "cache=$npm_config_cache_dir"; ' +
+      'echo "state=$npm_config_state_dir"; echo "manage=$npm_config_manage_package_manager_versions"',
+  );
+  const root = join(env.home, ".cache", "toolshelf", "pnpm");
+  for (const k of ["home", "store", "cache", "state"]) {
+    assert.match(r.tail, new RegExp(`^${k}=${root}/`, "m"), `${k} should be under ${root}`);
+  }
+  assert.doesNotMatch(r.tail, /Library/);
+  assert.match(r.tail, /^manage=false$/m, "pnpm must not switch itself to another version");
+});
+
 test("writes: the project yes; home, /tmp no", { skip }, async () => {
   const r = await run(
     "echo ok > built.txt && echo built; " +

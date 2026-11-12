@@ -146,6 +146,9 @@ export async function runDocker(m: Manifest, req: DockerRunRequest): Promise<Run
     GOTOOLCHAIN: "local",
     MAVEN_CONFIG: "", // the maven image sets it, and mvn passes it on as an argument
     PIP_DISABLE_PIP_VERSION_CHECK: "1",
+    // pnpm (e.g. via corepack in a node image): keep its dirs in the fresh /tmp
+    PNPM_HOME: "/tmp/.pnpm",
+    npm_config_store_dir: "/tmp/.pnpm-store",
   };
   const javaOpts = ["-Duser.home=/tmp"];
 
