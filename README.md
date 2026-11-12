@@ -118,6 +118,33 @@ from a terminal for the full suite.
 | `TOOLSHELF_STATE` | `$XDG_STATE_HOME/toolshelf` (run logs, profiles, requests, `blocked.jsonl`: blocklist hits, same format as the dotfiles guard hook) |
 | `TOOLSHELF_PROXY` | `$https_proxy`, else `http://127.0.0.1:3128` (must be localhost) |
 | `TOOLSHELF_HOME` (install.sh only, same as `--prefix`) | `<components>/toolshelf-mcp` |
+| `TOOLSHELF_OTLP_ENDPOINT` | `http://127.0.0.1:4318` (OTLP/HTTP, e.g. a local SigNoz); `off` disables telemetry |
+
+## Telemetry
+
+Each `run` becomes a trace, sent as OTLP/HTTP JSON by `src/telemetry.ts`. It's
+about 250 lines with no dependencies, and doesn't use the OTel SDK. Exports
+are fire-and-forget with a 2 s timeout, so with no collector running the data
+is dropped and nothing slows down.
+
+- **Spans:** `toolshelf.run` contains `toolshelf.check` (manifest and
+  blocklist), then either `sandbox.prepare` and `sandbox.exec`, or
+  `docker.check`, `docker.network_setup`, `docker.exec` and `docker.cleanup`.
+  - **Attributes:** mode, network, project (the folder name), command and
+    program (`toolshelf.command.name`), tools, `process.exit.code`, timed
+    out, output truncated, sandbox denied, image.
+  - **Status:** an error status when the run failed or was blocked.
+- **Events:** `toolshelf.blocked`, a log record per blocklist hit, linked to its
+  trace.
+- **Resource:** `service.name=toolshelf`, plus `agent.client`, the MCP
+  client's name (`claude-code`, `codex-mcp-client`, …). For Claude Code there
+  is also `agent.config=claude|myclaude`, taken from `CLAUDE_CONFIG_DIR`.
+- **Joining the agent's trace:** if a client sends a W3C `traceparent` in the
+  request's `_meta`, the run becomes a child of the agent's own span.
+- **Never sent:** command output. It stays in the run log on disk.
+
+Tests set `TOOLSHELF_OTLP_ENDPOINT=off` and use their own receiver
+(`test/telemetry.test.mjs`).
 
 ## Other agents
 

@@ -7,6 +7,7 @@ import { findTool, resolveVersion, PINNED_IMAGE, type Manifest } from "./compone
 import { CACHE_ROOT, STATE_ROOT } from "./paths.js";
 import {
   RunError,
+  execAttrs,
   execLogged,
   proxyFromEnv,
   runId,
@@ -15,6 +16,7 @@ import {
   type RunRequest,
   type RunResult,
 } from "./sandbox.js";
+import { Span } from "./telemetry.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -108,17 +110,22 @@ function mavenSettings(port: string): string {
 }
 
 export async function runDocker(m: Manifest, req: DockerRunRequest): Promise<RunResult> {
+  const span = req.span ?? new Span("toolshelf.run");
   const project = validateProject(req.cwd);
   const { image, tool, version } = pickImage(m, req.tools);
   recordImage(image);
+  span.set({ "container.image.name": image.split("@")[0] });
 
-  try {
-    await docker(["info", "--format", "{{.ServerVersion}}"], 10_000);
-  } catch {
-    throw new RunError("Docker isn't running. Start Colima yourself (`costart`); toolshelf never starts it.");
-  }
+  await span.within("docker.check", async () => {
+    try {
+      await docker(["info", "--format", "{{.ServerVersion}}"], 10_000);
+    } catch {
+      throw new RunError("Docker isn't running. Start Colima yourself (`costart`); toolshelf never starts it.");
+    }
+  });
 
   const id = runId();
+  span.set({ "toolshelf.run_id": id });
   const name = `toolshelf-${id}`;
   const net = `toolshelf-net-${id}`;
   const fwd = `toolshelf-fwd-${id}`;
@@ -161,16 +168,18 @@ export async function runDocker(m: Manifest, req: DockerRunRequest): Promise<Run
       }
       recordImage(forwarder);
       const port = proxyFromEnv().port;
-      await docker(["network", "create", "--internal", net]);
-      cleanup.push(["network", "rm", net]);
-      await docker([
-        "run", "-d", "--rm", "--pull", "missing", "--name", fwd,
-        "--network", net, "--network-alias", "proxy",
-        "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-        forwarder, `TCP-LISTEN:${port},fork,reuseaddr`, `TCP:${HOST_FROM_VM}:${port}`,
-      ], 120_000);
-      cleanup.unshift(["rm", "-f", fwd]);
-      await docker(["network", "connect", "bridge", fwd]);
+      await span.within("docker.network_setup", async () => {
+        await docker(["network", "create", "--internal", net]);
+        cleanup.push(["network", "rm", net]);
+        await docker([
+          "run", "-d", "--rm", "--pull", "missing", "--name", fwd,
+          "--network", net, "--network-alias", "proxy",
+          "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+          forwarder, `TCP-LISTEN:${port},fork,reuseaddr`, `TCP:${HOST_FROM_VM}:${port}`,
+        ], 120_000);
+        cleanup.unshift(["rm", "-f", fwd]);
+        await docker(["network", "connect", "bridge", fwd]);
+      });
 
       const p = `http://proxy:${port}`;
       args.push("--network", net);
@@ -193,22 +202,31 @@ export async function runDocker(m: Manifest, req: DockerRunRequest): Promise<Run
 
     args.push("--entrypoint", "sh", image, "-c", req.command);
 
-    const r = await execLogged(dockerBin(), args, {
-      cwd: project,
-      env: process.env as Record<string, string>,
-      timeoutSec: req.timeoutSec,
-      tailChars: req.tailChars,
-      logPath,
-      header:
-        `# toolshelf run ${id} (docker, network ${req.network})\n# cwd: ${project} → /work\n` +
-        `# image: ${image}\n# command: ${req.command}\n`,
-      onTimeout: () => {
-        execFile(dockerBin(), ["kill", name], () => {});
-      },
+    // Includes pulling the image when it's missing (`--pull missing`).
+    const r = await span.within("docker.exec", async (s) => {
+      const r = await execLogged(dockerBin(), args, {
+        cwd: project,
+        env: process.env as Record<string, string>,
+        timeoutSec: req.timeoutSec,
+        tailChars: req.tailChars,
+        logPath,
+        header:
+          `# toolshelf run ${id} (docker, network ${req.network})\n# cwd: ${project} → /work\n` +
+          `# image: ${image}\n# command: ${req.command}\n`,
+        onTimeout: () => {
+          execFile(dockerBin(), ["kill", name], () => {});
+        },
+      });
+      s.set(execAttrs(r));
+      return r;
     });
     return { ...r, logPath, selected: [{ tool, version }] };
   } finally {
-    for (const c of cleanup) await docker(c).catch(() => {});
+    if (cleanup.length) {
+      await span.within("docker.cleanup", async () => {
+        for (const c of cleanup) await docker(c).catch(() => {});
+      });
+    }
     cleanup = [];
   }
 }

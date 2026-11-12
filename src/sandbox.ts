@@ -14,6 +14,7 @@ import { join, relative, sep } from "node:path";
 
 import { envFor, findTool, locate, versionsOf, type Manifest } from "./components.js";
 import { CACHE_ROOT, HOME, STATE_ROOT } from "./paths.js";
+import { Span, type Attrs } from "./telemetry.js";
 
 // ---------------------------------------------------------------------------
 // Sandbox mode for `run`: macOS sandbox-exec with a generated profile.
@@ -32,6 +33,8 @@ export interface RunRequest {
   timeoutSec: number;
   /** Characters of output returned (the full log is always on disk) */
   tailChars: number;
+  /** The run's trace span; phases become child spans */
+  span?: Span;
 }
 
 export interface RunResult {
@@ -433,30 +436,49 @@ export async function execLogged(file: string, args: string[], o: ExecOptions): 
 }
 
 export async function runSandboxed(m: Manifest, req: RunRequest): Promise<RunResult> {
-  const project = validateProject(req.cwd);
-  const proxy = proxyFromEnv();
-  const caches = prepareCaches(m, proxy);
-  const tmp = mkdtempSync(join(caches.tmp, "run-"));
-  const { env, selected } = buildEnv(m, req.tools, proxy, caches, tmp);
-
+  const span = req.span ?? new Span("toolshelf.run");
   const id = runId();
-  const profilePath = join(runsDir(), `${id}.sb`);
-  const logPath = join(runsDir(), `${id}.log`);
-  writeFileSync(profilePath, buildProfile(project));
+  const { project, env, selected, tmp, profilePath, logPath } = await span.within("sandbox.prepare", (s) => {
+    const project = validateProject(req.cwd);
+    const proxy = proxyFromEnv();
+    const caches = prepareCaches(m, proxy);
+    const tmp = mkdtempSync(join(caches.tmp, "run-"));
+    const { env, selected } = buildEnv(m, req.tools, proxy, caches, tmp);
+    const profilePath = join(runsDir(), `${id}.sb`);
+    const logPath = join(runsDir(), `${id}.log`);
+    writeFileSync(profilePath, buildProfile(project));
+    s.set({ "toolshelf.tools.count": selected.length });
+    return { project, env, selected, tmp, profilePath, logPath };
+  });
+  span.set({ "toolshelf.run_id": id });
 
   try {
-    const r = await execLogged("/usr/bin/sandbox-exec", ["-f", profilePath, "/bin/zsh", "-f", "-c", req.command], {
-      cwd: project,
-      env,
-      timeoutSec: req.timeoutSec,
-      tailChars: req.tailChars,
-      logPath,
-      header: `# toolshelf run ${id} (sandbox)\n# cwd: ${project}\n# tools: ${
-        selected.map((s) => `${s.tool} ${s.version}`).join(", ") || "(none)"
-      }\n# command: ${req.command}\n`,
+    const r = await span.within("sandbox.exec", async (s) => {
+      const r = await execLogged("/usr/bin/sandbox-exec", ["-f", profilePath, "/bin/zsh", "-f", "-c", req.command], {
+        cwd: project,
+        env,
+        timeoutSec: req.timeoutSec,
+        tailChars: req.tailChars,
+        logPath,
+        header: `# toolshelf run ${id} (sandbox)\n# cwd: ${project}\n# tools: ${
+          selected.map((s) => `${s.tool} ${s.version}`).join(", ") || "(none)"
+        }\n# command: ${req.command}\n`,
+      });
+      s.set(execAttrs(r));
+      return r;
     });
     return { ...r, logPath, selected };
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
+}
+
+/** Span attributes for a finished process (OTel semantic names where they exist). */
+export function execAttrs(r: Omit<ExecResult, "tail">): Attrs {
+  return {
+    "process.exit.code": r.exitCode ?? undefined,
+    "process.signal": r.signal ?? undefined,
+    "toolshelf.timed_out": r.timedOut,
+    "toolshelf.output_truncated": r.truncated,
+  };
 }

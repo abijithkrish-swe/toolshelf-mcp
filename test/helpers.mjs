@@ -70,6 +70,8 @@ export function setupHome({ manifest = MANIFEST, blocklist = BLOCKLIST } = {}) {
     XDG_CACHE_HOME: join(home, ".cache"),
     XDG_STATE_HOME: join(home, ".local", "state"),
     TOOLSHELF_PROXY: "http://127.0.0.1:3128",
+    // Never send test runs to the user's SigNoz; telemetry tests set their own receiver.
+    TOOLSHELF_OTLP_ENDPOINT: "off",
   });
   return {
     home,

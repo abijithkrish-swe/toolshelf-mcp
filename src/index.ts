@@ -7,7 +7,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { basename, dirname } from "node:path";
 
 import {
   loadManifest,
@@ -24,8 +24,10 @@ import { loadBlocklist, matchBlocklist, recordBlocked } from "./blocklist.js";
 import { readToolsrc } from "./toolsrc.js";
 import { DEFAULT_TAIL_KB, runSandboxed, sandboxDenied, validateProject } from "./sandbox.js";
 import { runDocker } from "./docker.js";
+import { execAttrs } from "./sandbox.js";
 import { REQUESTS_PATH } from "./paths.js";
 import { loadInstructions } from "./instructions.js";
+import { commandName, flush, setClient, startSpan, type Span } from "./telemetry.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -255,9 +257,47 @@ server.tool(
           "(enforced), e.g. to download dependencies.",
       ),
   },
-  async ({ command, cwd, tools, timeout_seconds, tail_kb, mode, network }) => {
-    let m: Manifest;
+  async (args, extra) => {
+    // One trace per run (Docs: dotfiles Docs/Observability.md). It joins the
+    // agent's trace when the client sends a W3C traceparent in _meta.
+    const span = startSpan("toolshelf.run", extra?._meta?.traceparent);
+    span.set({
+      "toolshelf.mode": args.mode ?? "sandbox",
+      "toolshelf.network": args.mode === "docker" ? (args.network ?? "none") : "proxy",
+      "toolshelf.project": basename(args.cwd.replace(/\/+$/, "")),
+      "toolshelf.command": args.command,
+      "toolshelf.command.name": commandName(args.command),
+      "toolshelf.timeout_s": args.timeout_seconds ?? 600,
+    });
     try {
+      const result = await runTool(args, span);
+      if (result.isError) span.error(result.content[0]?.text.split("\n")[0] ?? "error");
+      else span.ok();
+      return result;
+    } finally {
+      span.end();
+      void flush();
+    }
+  },
+);
+
+type RunArgs = {
+  command: string;
+  cwd: string;
+  tools?: Record<string, string>;
+  timeout_seconds?: number;
+  tail_kb?: number;
+  mode?: "sandbox" | "docker";
+  network?: "none" | "proxy";
+};
+
+async function runTool(
+  { command, cwd, tools, timeout_seconds, tail_kb, mode, network }: RunArgs,
+  span: Span,
+): Promise<ToolResult> {
+  let m: Manifest;
+  try {
+    const blocked = await span.within("toolshelf.check", (s) => {
       m = loadManifest();
       if (network && mode !== "docker") return fail('network applies only to mode "docker"');
       // Docker runs are isolated from the host's tools, so the blocklist
@@ -265,64 +305,83 @@ server.tool(
       const rule = mode === "docker" ? undefined : matchBlocklist(loadBlocklist(), command);
       if (rule) {
         recordBlocked(rule, command, cwd);
+        s.error("blocked");
+        span.set({ "toolshelf.blocked": true, "toolshelf.block_reason": rule.reason });
+        span.event("toolshelf.blocked", `Blocked: ${rule.reason}`, {
+          "toolshelf.block_reason": rule.reason,
+          "toolshelf.command": command,
+          "toolshelf.command.name": commandName(command),
+          "toolshelf.project": basename(cwd.replace(/\/+$/, "")),
+          "toolshelf.source": "run",
+        });
         return fail(
           `Blocked: ${rule.reason}.\nThis command was not run. If the user wants it, they run it ` +
             `themselves; for a missing tool version use request_component.`,
         );
       }
-    } catch (err: unknown) {
-      return fail(err instanceof Error ? err.message : String(err));
-    }
+      return undefined;
+    });
+    if (blocked) return blocked;
+  } catch (err: unknown) {
+    return fail(err instanceof Error ? err.message : String(err));
+  }
 
-    let selection = tools;
-    let source = "tools argument";
-    if (!selection) {
-      try {
-        const rc = readToolsrc(validateProject(cwd));
-        selection = rc?.tools ?? {};
-        source = rc ? rc.path : "no .toolsrc (system tools only)";
-      } catch (err: unknown) {
-        return fail(err instanceof Error ? err.message : String(err));
-      }
-    }
-
+  let selection = tools;
+  let source = "tools argument";
+  if (!selection) {
     try {
-      const base = {
-        command,
-        cwd,
-        tools: selection,
-        timeoutSec: timeout_seconds ?? 600,
-        tailChars: (tail_kb ?? DEFAULT_TAIL_KB) * 1024,
-      };
-      const r =
-        mode === "docker"
-          ? await runDocker(m, { ...base, network: network ?? "none" })
-          : await runSandboxed(m, base);
-      if (mode === "docker") source += `; docker, network ${network ?? "none"}`;
-      const status = r.timedOut
-        ? `TIMED OUT after ${timeout_seconds ?? 600}s`
-        : r.exitCode !== null
-          ? `exit ${r.exitCode}`
-          : `killed by ${r.signal}`;
-      const header = [
-        `${status} in ${(r.durationMs / 1000).toFixed(1)}s`,
-        `tools: ${r.selected.map((s) => `${s.tool} ${s.version}`).join(", ") || "(none)"} [${source}]`,
-        `log: ${r.logPath}`,
-        r.truncated
-          ? `(showing the last ${tail_kb ?? DEFAULT_TAIL_KB} KB; read the log for the rest, or pass a larger tail_kb)`
-          : "",
-        mode !== "docker" && sandboxDenied(r.logPath)
-          ? "note: the sandbox blocked a file operation (\"operation not permitted\" in the log), even if " +
-            "the exit code looks fine. Writes are allowed only in the project and $TMPDIR (not /tmp, not ~)."
-          : "",
-      ].filter(Boolean);
-      const result = { content: [{ type: "text" as const, text: `${header.join("\n")}\n\n${r.tail}` }] };
-      return r.exitCode === 0 ? result : { ...result, isError: true };
+      const rc = readToolsrc(validateProject(cwd));
+      selection = rc?.tools ?? {};
+      source = rc ? rc.path : "no .toolsrc (system tools only)";
     } catch (err: unknown) {
       return fail(err instanceof Error ? err.message : String(err));
     }
-  },
-);
+  }
+  span.set({ "toolshelf.tools_source": source.startsWith("/") ? ".toolsrc" : source });
+
+  try {
+    const base = {
+      command,
+      cwd,
+      tools: selection,
+      timeoutSec: timeout_seconds ?? 600,
+      tailChars: (tail_kb ?? DEFAULT_TAIL_KB) * 1024,
+      span,
+    };
+    const r =
+      mode === "docker"
+        ? await runDocker(m!, { ...base, network: network ?? "none" })
+        : await runSandboxed(m!, base);
+    span.set({
+      "toolshelf.tools": r.selected.map((s) => `${s.tool} ${s.version}`).join(", "),
+      ...execAttrs(r),
+    });
+    if (mode === "docker") source += `; docker, network ${network ?? "none"}`;
+    const status = r.timedOut
+      ? `TIMED OUT after ${timeout_seconds ?? 600}s`
+      : r.exitCode !== null
+        ? `exit ${r.exitCode}`
+        : `killed by ${r.signal}`;
+    const denied = mode !== "docker" && sandboxDenied(r.logPath);
+    if (denied) span.set({ "toolshelf.sandbox_denied": true });
+    const header = [
+      `${status} in ${(r.durationMs / 1000).toFixed(1)}s`,
+      `tools: ${r.selected.map((s) => `${s.tool} ${s.version}`).join(", ") || "(none)"} [${source}]`,
+      `log: ${r.logPath}`,
+      r.truncated
+        ? `(showing the last ${tail_kb ?? DEFAULT_TAIL_KB} KB; read the log for the rest, or pass a larger tail_kb)`
+        : "",
+      denied
+        ? "note: the sandbox blocked a file operation (\"operation not permitted\" in the log), even if " +
+          "the exit code looks fine. Writes are allowed only in the project and $TMPDIR (not /tmp, not ~)."
+        : "",
+    ].filter(Boolean);
+    const result = { content: [{ type: "text" as const, text: `${header.join("\n")}\n\n${r.tail}` }] };
+    return r.exitCode === 0 ? result : { ...result, isError: true };
+  } catch (err: unknown) {
+    return fail(err instanceof Error ? err.message : String(err));
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Tool: request_component
@@ -504,6 +563,11 @@ async function cmd(bin: string, args: string[]): Promise<{ ok: boolean; out: str
 
 async function main() {
   const transport = new StdioServerTransport();
+  // Label telemetry with the client (claude-code, codex-mcp-client, cursor …)
+  server.server.oninitialized = () => {
+    const c = server.server.getClientVersion();
+    setClient(c?.name, c?.version);
+  };
   await server.connect(transport);
 }
 
