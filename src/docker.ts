@@ -7,6 +7,7 @@ import { findTool, resolveVersion, PINNED_IMAGE, type Manifest } from "./compone
 import { CACHE_ROOT, STATE_ROOT } from "./paths.js";
 import {
   RunError,
+  endExec,
   execAttrs,
   execLogged,
   proxyFromEnv,
@@ -217,7 +218,7 @@ export async function runDocker(m: Manifest, req: DockerRunRequest): Promise<Run
           execFile(dockerBin(), ["kill", name], () => {});
         },
       });
-      s.set(execAttrs(r));
+      endExec(s, r);
       return r;
     });
     return { ...r, logPath, selected: [{ tool, version }] };

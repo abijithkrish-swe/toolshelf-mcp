@@ -171,6 +171,7 @@ test("a sandboxed run: check → prepare → exec, exit code, no output", { skip
     assert.ok(BigInt(s.endTimeUnixNano) <= BigInt(root.endTimeUnixNano), `${n} ends inside the run`);
   }
   assert.equal(attr(root.attributes, "process.exit.code"), "3");
+  assert.equal(spans.find((x) => x.name === "sandbox.exec").status.code, 2, "the exec phase carries the error too");
   assert.equal(attr(root.attributes, "toolshelf.tools"), "fake 1.2.3");
   assert.equal(attr(root.attributes, "toolshelf.mode"), "sandbox");
   assert.equal(root.status.code, 2);

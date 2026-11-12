@@ -464,13 +464,21 @@ export async function runSandboxed(m: Manifest, req: RunRequest): Promise<RunRes
           selected.map((s) => `${s.tool} ${s.version}`).join(", ") || "(none)"
         }\n# command: ${req.command}\n`,
       });
-      s.set(execAttrs(r));
+      endExec(s, r);
       return r;
     });
     return { ...r, logPath, selected };
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
+}
+
+/** Record a finished process on its exec span; non-zero, a signal or a timeout is an error. */
+export function endExec(s: Span, r: Omit<ExecResult, "tail">): void {
+  s.set(execAttrs(r));
+  if (r.timedOut) s.error("timed out");
+  else if (r.exitCode !== 0) s.error(r.exitCode !== null ? `exit ${r.exitCode}` : `killed by ${r.signal}`);
+  else s.ok();
 }
 
 /** Span attributes for a finished process (OTel semantic names where they exist). */
