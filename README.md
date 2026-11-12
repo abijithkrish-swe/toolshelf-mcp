@@ -123,7 +123,7 @@ from a terminal for the full suite.
 ## Telemetry
 
 Each `run` becomes a trace, sent as OTLP/HTTP JSON by `src/telemetry.ts`. It's
-about 250 lines with no dependencies, and doesn't use the OTel SDK. Exports
+about 300 lines with no dependencies, and doesn't use the OTel SDK. Exports
 are fire-and-forget with a 2 s timeout, so with no collector running the data
 is dropped and nothing slows down.
 
