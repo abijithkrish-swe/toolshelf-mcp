@@ -233,6 +233,9 @@ function buildEnv(
     LC_ALL: "en_US.UTF-8",
     TERM: "dumb",
     TMPDIR: tmp,
+    // zsh writes here-documents (`python - <<'EOF'`) and `=(…)` to $TMPPREFIX*,
+    // default /tmp/zsh, not to $TMPDIR. /tmp isn't writable here.
+    TMPPREFIX: join(tmp, "zsh"),
     PATH: [...comp.path, ...SYSTEM_PATH].join(":"),
     // proxy (curl, npm, cargo, go honour these)
     http_proxy: proxy.url,

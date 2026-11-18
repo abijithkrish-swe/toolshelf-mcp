@@ -87,6 +87,14 @@ test("$TMPDIR is private to the run and removed afterwards", { skip }, async () 
   assert.equal(s.sandboxDenied(r.logPath), false);
 });
 
+test("here-documents and =(…) work (zsh temp files go to $TMPDIR, not /tmp)", { skip }, async () => {
+  const r = await run("cat <<'EOF'\nheredoc-ok\nEOF\ncat =(echo procsub-ok)");
+  assert.equal(r.exitCode, 0, r.tail);
+  assert.match(r.tail, /heredoc-ok/);
+  assert.match(r.tail, /procsub-ok/);
+  assert.equal(s.sandboxDenied(r.logPath), false, r.tail);
+});
+
 test("secrets are unreadable", { skip }, async () => {
   const r = await run("cat ~/.ssh/id_test 2>&1; cat ~/.config/secrets/vault.store 2>&1; ls ~/.ssh 2>&1; true");
   assert.doesNotMatch(r.tail, /PRIVATE KEY|VAULT/, "contents never leak");
