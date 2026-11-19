@@ -116,6 +116,14 @@ print_config() {
 Codex — the CLI and Codex in the ChatGPT app share ~/.codex/config.toml:
   $(sq "${codex:-codex}") mcp remove toolshelf >/dev/null 2>&1; $(sq "${codex:-codex}") mcp add toolshelf --env $(sq "COMPONENTS=$COMPONENTS") --env $(sq "COMPONENTS_MANIFEST=$MANIFEST") -- $(sq "$NODE_BIN/node") $(sq "$server")
   (check with: $(sq "${codex:-codex}") mcp list)
+  Then set tool approvals in ~/.codex/config.toml. Without them Codex (in the
+  ChatGPT app) denies every toolshelf call at once, even list_components. Add
+  the first line under [mcp_servers.toolshelf], and the table after it:
+    default_tools_approval_mode = "approve"   # read-only tools: no prompt
+
+    [mcp_servers.toolshelf.tools.run]
+    approval_mode = "prompt"                  # run asks, as in Claude Code
+  (values: auto, prompt, writes, approve; check with: $(sq "${codex:-codex}") mcp get toolshelf)
 
 Claude app (Chat / Cowork) — merge into "mcpServers" in
   ~/Library/Application Support/Claude/claude_desktop_config.json

@@ -51,6 +51,12 @@ test("the JSON blocks are valid and point at this machine's paths", () => {
   }
 });
 
+test("the Codex part sets tool approvals: read tools approved, run prompts", () => {
+  // Without these, Codex in the ChatGPT app denied every toolshelf call at once (2026-11-19).
+  assert.match(out, /^ +default_tools_approval_mode = "approve"/m);
+  assert.match(out, /^ +\[mcp_servers\.toolshelf\.tools\.run\]\n +approval_mode = "prompt"/m);
+});
+
 test("the Codex command is quoted for paths with spaces and silences the first remove", () => {
   const line = out.split("\n").find((l) => l.includes(" mcp add toolshelf "));
   assert.ok(line, out);
