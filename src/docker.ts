@@ -154,9 +154,11 @@ export async function runDocker(m: Manifest, req: DockerRunRequest): Promise<Run
     GOTOOLCHAIN: "local",
     MAVEN_CONFIG: "", // the maven image sets it, and mvn passes it on as an argument
     PIP_DISABLE_PIP_VERSION_CHECK: "1",
-    // pnpm (e.g. via corepack in a node image): keep its dirs in the fresh /tmp
+    // pnpm: keep its dirs in the fresh /tmp. pnpm 12 reads only pnpm_config_*,
+    // older pnpm (corepack in a node image) npm_config_*: set both.
     PNPM_HOME: "/tmp/.pnpm",
     npm_config_store_dir: "/tmp/.pnpm-store",
+    pnpm_config_store_dir: "/tmp/.pnpm-store",
   };
   const javaOpts = ["-Duser.home=/tmp"];
 
@@ -188,6 +190,7 @@ export async function runDocker(m: Manifest, req: DockerRunRequest): Promise<Run
         http_proxy: p, https_proxy: p, HTTP_PROXY: p, HTTPS_PROXY: p,
         no_proxy: "localhost,127.0.0.1", NO_PROXY: "localhost,127.0.0.1",
         npm_config_proxy: p, npm_config_https_proxy: p, CARGO_HTTP_PROXY: p,
+        pnpm_config_proxy: p, pnpm_config_https_proxy: p,
         MAVEN_ARGS: "-s /opt/toolshelf/m2-settings.xml",
       });
       for (const s of ["http", "https"]) javaOpts.push(`-D${s}.proxyHost=proxy`, `-D${s}.proxyPort=${port}`);
