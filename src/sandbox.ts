@@ -404,14 +404,16 @@ export async function execLogged(file: string, args: string[], o: ExecOptions): 
   const timer = setTimeout(() => {
     timedOut = true;
     o.onTimeout?.();
-    killGroup("SIGTERM");
-    // The shell may handle TERM late and start the script's next command
-    // first; kill it outright so nothing more runs. Children got TERM above.
+    // Kill the shell outright FIRST, so it can't start the script's next
+    // command. With TERM to the group first, TERM ended the foreground sleep
+    // and zsh ran a builtin (`echo never`) before its own SIGKILL arrived.
     try {
       child.kill("SIGKILL");
     } catch {
       /* already gone */
     }
+    // Then let its children stop cleanly; KILL them after 5 s below.
+    killGroup("SIGTERM");
     setTimeout(() => killGroup("SIGKILL"), 5_000).unref();
   }, o.timeoutSec * 1000);
 
