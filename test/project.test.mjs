@@ -101,3 +101,24 @@ test("proxy must be on localhost", () => {
     process.env.TOOLSHELF_PROXY = saved;
   }
 });
+
+test("colimaHome: COLIMA_HOME wins; else ~/.config/colima when it has the default profile", async () => {
+  // Apps start toolshelf without the shell's COLIMA_HOME; colima then reported
+  // a running VM as "not running" (2026-11-20).
+  const { colimaHome } = await import(`${DIST}/paths.js`);
+  const saved = process.env.COLIMA_HOME;
+  try {
+    delete process.env.COLIMA_HOME;
+    assert.equal(colimaHome(), undefined, "no colima profile anywhere");
+    mkdirSync(join(home, ".config", "colima", "default"), { recursive: true });
+    mkdirSync(join(home, ".colima", "_lima"), { recursive: true }); // the bare dir a failed call leaves
+    assert.equal(colimaHome(), join(home, ".config", "colima"));
+    mkdirSync(join(home, ".colima", "default"));
+    assert.equal(colimaHome(), undefined, "~/.colima has its own profile: colima's default is right");
+    process.env.COLIMA_HOME = "/somewhere/else";
+    assert.equal(colimaHome(), "/somewhere/else");
+  } finally {
+    if (saved === undefined) delete process.env.COLIMA_HOME;
+    else process.env.COLIMA_HOME = saved;
+  }
+});

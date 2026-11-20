@@ -25,7 +25,7 @@ import { readToolsrc } from "./toolsrc.js";
 import { DEFAULT_TAIL_KB, runSandboxed, sandboxDenied, validateProject } from "./sandbox.js";
 import { runDocker } from "./docker.js";
 import { execAttrs } from "./sandbox.js";
-import { REQUESTS_PATH } from "./paths.js";
+import { REQUESTS_PATH, colimaHome } from "./paths.js";
 import { loadInstructions } from "./instructions.js";
 import { commandName, flush, setClient, startSpan, type Span } from "./telemetry.js";
 
@@ -548,8 +548,12 @@ function colimaMsgs(s: string): string {
 
 async function cmd(bin: string, args: string[]): Promise<{ ok: boolean; out: string }> {
   const PATH = [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].filter(Boolean).join(":");
+  const home = colimaHome();
   try {
-    const { stdout, stderr } = await execFileAsync(bin, args, { timeout: 10_000, env: { ...process.env, PATH } });
+    const { stdout, stderr } = await execFileAsync(bin, args, {
+      timeout: 10_000,
+      env: { ...process.env, PATH, ...(home ? { COLIMA_HOME: home } : {}) },
+    });
     return { ok: true, out: (stdout + stderr).trim() };
   } catch (err: unknown) {
     const e = err as { stdout?: string; stderr?: string };
